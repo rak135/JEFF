@@ -9,6 +9,9 @@ WorkUnitId = NewType("WorkUnitId", str)
 RunId = NewType("RunId", str)
 TransitionId = NewType("TransitionId", str)
 MemoryId = NewType("MemoryId", str)
+ActionId = NewType("ActionId", str)
+ProposalId = NewType("ProposalId", str)
+SelectionId = NewType("SelectionId", str)
 
 
 def validate_typed_id(value: str, *, field_name: str) -> str:
@@ -41,3 +44,15 @@ def coerce_transition_id(value: str) -> TransitionId:
 
 def coerce_memory_id(value: str) -> MemoryId:
     return MemoryId(validate_typed_id(value, field_name="memory_id"))
+
+
+def coerce_action_id(value: str) -> ActionId:
+    return ActionId(validate_typed_id(value, field_name="action_id"))
+
+
+def coerce_proposal_id(value: str) -> ProposalId:
+    return ProposalId(validate_typed_id(value, field_name="proposal_id"))
+
+
+def coerce_selection_id(value: str) -> SelectionId:
+    return SelectionId(validate_typed_id(value, field_name="selection_id"))

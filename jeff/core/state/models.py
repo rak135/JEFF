@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import Mapping
 
 from jeff.core.containers.models import Project, freeze_mapping
-from jeff.core.schemas.ids import TransitionId, coerce_transition_id
+from jeff.core.schemas.ids import ProjectId, TransitionId, coerce_transition_id
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,7 +43,7 @@ class SystemState:
 class GlobalState:
     state_meta: StateMeta = field(default_factory=StateMeta)
     system: SystemState = field(default_factory=SystemState)
-    projects: Mapping[str, Project] = field(default_factory=dict)
+    projects: Mapping[ProjectId, Project] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         frozen_projects = freeze_mapping(self.projects)
