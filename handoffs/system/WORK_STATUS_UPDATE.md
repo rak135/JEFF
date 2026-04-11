@@ -308,3 +308,60 @@
   - jeff/infrastructure/model_adapters/providers/ollama.py
   - jeff/infrastructure/HANDOFF.md
   - tests/unit/infrastructure/test_ollama_model_adapter.py
+
+## 2026-04-11 19:50 - Added infrastructure runtime assembly Slice C1
+
+- Scope: infrastructure runtime wiring and explicit bootstrap assembly hook
+- Done:
+  - added `jeff/infrastructure/runtime.py` with runtime config, infrastructure services, and explicit registry assembly
+  - exported the new runtime surface from `jeff.infrastructure`
+  - added a minimal bootstrap helper that assembles infrastructure services from an explicit config object
+  - updated `jeff/infrastructure/HANDOFF.md` to reflect Slice C1 runtime reality
+  - added deterministic tests for runtime services and bootstrap assembly behavior
+- Validation: targeted runtime tests passed and full `python -m pytest -q` passed with 178 tests
+- Current state: Jeff can now explicitly construct and hold adapter infrastructure at runtime without integrating adapters into semantic layers
+- Next step: keep future adapter usage or integration slices downstream of this assembly boundary without leaking provider logic into semantics
+- Files:
+  - jeff/infrastructure/runtime.py
+  - jeff/infrastructure/__init__.py
+  - jeff/bootstrap.py
+  - tests/unit/infrastructure/test_runtime_services.py
+  - tests/integration/test_bootstrap_model_adapters.py
+
+## 2026-04-11 20:44 - Added research synthesis Slice C2a
+
+- Scope: cognitive research synthesis over prepared evidence using the model adapter stack
+- Done:
+  - added bounded prepared-evidence research models and synthesis-only validation in `jeff/cognitive/research.py`
+  - added provider-neutral model-request builder for research synthesis with explicit JSON output contract
+  - added synthesis entry points for direct adapter use and infrastructure-runtime-backed adapter resolution
+  - preserved the earlier `ResearchResult` contract for existing stage and orchestrator tests
+  - added deterministic unit and integration tests for synthesis success, fail-closed validation, and runtime-backed adapter use
+- Validation: targeted research synthesis tests passed and full `python -m pytest -q` passed with 187 tests
+- Current state: Jeff now has a first bounded semantic-layer use of model adapters for research synthesis only, starting from explicit evidence and ending in a validated research artifact
+- Next step: keep future research slices bounded to source acquisition or downstream integration without widening synthesis ownership
+- Files:
+  - jeff/cognitive/research.py
+  - jeff/cognitive/__init__.py
+  - tests/unit/cognitive/test_research_synthesis.py
+  - tests/integration/test_research_synthesis_with_runtime.py
+  - handoffs/system/WORK_STATUS_UPDATE_2026-04-11_2044.md   
+
+## 2026-04-11 20:56 - Added document research Slice C2b
+
+- Scope: bounded local-document source acquisition and evidence extraction for research
+- Done:
+  - extended `ResearchRequest` with explicit bounded document-source inputs and limits
+  - added `jeff/cognitive/research_documents.py` for deterministic local document collection and keyword-overlap evidence extraction
+  - added a thin end-to-end `run_document_research(...)` helper that feeds collected evidence into the existing C2a synthesis path
+  - kept provenance explicit through stable document source IDs, path locators, and source-bound evidence refs
+  - added deterministic unit and integration tests for explicit paths, bounded limits, safe skipping, and runtime-backed end-to-end synthesis
+- Validation: targeted document-research tests passed and full `python -m pytest -q` passed with 197 tests
+- Current state: Jeff can now build bounded document sources and evidence packs from explicit local paths and feed them into the existing research synthesis path
+- Next step: add future research source providers only as bounded slices that keep provenance explicit and stay downstream of the shared pipeline
+- Files:
+  - jeff/cognitive/research.py
+  - jeff/cognitive/research_documents.py
+  - jeff/cognitive/__init__.py
+  - tests/unit/cognitive/test_research_documents.py
+  - tests/integration/test_document_research_end_to_end.py   

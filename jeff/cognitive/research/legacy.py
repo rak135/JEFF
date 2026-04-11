@@ -1,39 +1,24 @@
-"""Bounded, source-aware research contracts."""
+"""Legacy research contracts still needed by current callers/tests."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
 
-from jeff.core.schemas import Scope
-
-from .types import (
+from ..types import (
     Recommendation,
-    ResearchFinding,
+    ResearchFinding as LegacyResearchFinding,
     ResearchInference,
     SourceSummary,
     normalize_text_list,
-    require_text,
 )
-
-ResearchMode = Literal["direct_output", "decision_support"]
-
-
-@dataclass(frozen=True, slots=True)
-class ResearchRequest:
-    objective: str
-    scope: Scope
-    research_mode: ResearchMode
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "objective", require_text(self.objective, field_name="objective"))
+from .contracts import ResearchRequest
 
 
 @dataclass(frozen=True, slots=True)
 class ResearchResult:
     request: ResearchRequest
     sources: tuple[SourceSummary, ...]
-    findings: tuple[ResearchFinding, ...]
+    findings: tuple[LegacyResearchFinding, ...]
     inferences: tuple[ResearchInference, ...] = ()
     contradictions: tuple[str, ...] = ()
     uncertainty_notes: tuple[str, ...] = ()
