@@ -230,7 +230,7 @@ def _module_for_stage(stage: str | None) -> str | None:
         "governance": "governance",
         "execution": "action",
         "outcome": "action",
-        "evaluation": "action",
+        "evaluation": "cognitive",
         "memory": "memory",
         "transition": "core",
     }

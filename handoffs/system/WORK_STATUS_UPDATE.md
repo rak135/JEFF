@@ -126,3 +126,45 @@
   - jeff/interface/json_views.py
   - jeff/interface/render.py
   - tests/test_cli_truthfulness.py
+
+  ## 2026-04-11 10:16 - TASK: M-007A - Phase 7A backbone hardening
+
+- Scope: Phase 7A anti-drift coverage, bounded acceptance slices, and CLI/orchestrator truthfulness hardening
+- Done:
+  - added anti-drift tests for state/container invariants, governance boundaries, memory truth separation, orchestrator non-synthesis, and CLI semantic preservation
+  - added bounded acceptance tests for a lawful backbone flow, an approval-gated stop flow, wrong-scope rejection, and CLI inspect/trace/lifecycle alignment
+  - fixed CLI request JSON rendering, scoped run lookup rejection, ambiguous run lookup rejection, and evaluation stage semantic ownership in interface projections
+  - noted that evaluation is now reported as Cognitive in operator views even though the current implementation file still lives under `jeff/action/`
+  - kept GUI, broad API bridge, advanced memory backend, and autonomous continuation explicitly deferred with no new semantic layer added
+- Validation: targeted hardening suite passed with 16 tests; full `python -m pytest -q` passed with 117 tests
+- Current state: the v1 backbone is now acceptance-covered and hardened without widening post-Phase-6 scope
+- Next step: continue only with bounded v1 follow-up work that preserves the current deferral boundary
+- Files:
+  - tests/test_antidrift_semantic_boundaries.py
+  - tests/test_acceptance_backbone_flow.py
+  - tests/test_acceptance_truthfulness.py
+  - tests/test_acceptance_scope_isolation.py
+  - tests/test_acceptance_cli_orchestrator_alignment.py
+  - jeff/interface/commands.py
+  - jeff/interface/json_views.py
+
+## 2026-04-11 10:29 - Phase 7B startup and packaging
+
+- Scope: Phase 7B package entrypoint, demo bootstrap, startup docs, and smoke coverage
+- Done:
+  - added a stable `python -m jeff` entrypoint plus package script wiring in `pyproject.toml`
+  - added explicit in-memory demo bootstrap and startup preflight checks for the current CLI-first surface
+  - added `README.md` with truthful quickstart, test commands, current scope, and explicit deferrals
+  - added bootstrap and CLI entry smoke tests for help, one-shot commands, quickstart paths, and clear startup failures
+- Validation: `python -m pytest -q tests/test_bootstrap_smoke.py tests/test_cli_entry_smoke.py tests/test_quickstart_paths.py` passed with 12 tests; full `python -m pytest -q` passed with 129 tests
+- Current state: Jeff now has a documented operator-ready start path over the existing in-memory v1 backbone with no new semantic layer added
+- Next step: continue only with bounded v1 follow-up work that preserves the current deferred boundaries
+- Files:
+  - pyproject.toml
+  - README.md
+  - jeff/main.py
+  - jeff/__main__.py
+  - jeff/bootstrap.py
+  - tests/test_bootstrap_smoke.py
+  - tests/test_cli_entry_smoke.py
+  - tests/test_quickstart_paths.py

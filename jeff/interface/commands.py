@@ -82,7 +82,8 @@ def execute_command(
         result = _lifecycle_command(tokens=tokens, session=session, context=context)
         return _apply_json_mode(result, json_output=json_output)
     if tokens[0] in {"approve", "reject", "retry", "revalidate", "recover"}:
-        return _request_command(tokens=tokens, session=session, context=context)
+        result = _request_command(tokens=tokens, session=session, context=context)
+        return _apply_json_mode(result, json_output=json_output)
 
     raise ValueError(f"unsupported command: {' '.join(tokens)}")
 
@@ -288,15 +289,37 @@ def _resolve_run_from_tokens(*, tokens: list[str], session: CliSession, context:
     run_id = tokens[1] if len(tokens) > 1 else session.scope.run_id
     if run_id is None:
         raise ValueError("no run_id was provided and the session scope has no current run")
-    if session.scope.project_id is not None and session.scope.work_unit_id is not None:
+    if session.scope.project_id is not None:
         project = _get_project(context, session.scope.project_id)
-        work_unit = _get_work_unit(project, session.scope.work_unit_id)
-        return _get_run(work_unit, run_id)
+        if session.scope.work_unit_id is not None:
+            work_unit = _get_work_unit(project, session.scope.work_unit_id)
+            return _get_run(work_unit, run_id)
 
-    for project in context.state.projects.values():
-        for work_unit in project.work_units.values():
-            if run_id in work_unit.runs:
-                return work_unit.runs[run_id]
+        matches = [
+            work_unit.runs[run_id]
+            for work_unit in project.work_units.values()
+            if run_id in work_unit.runs
+        ]
+        if len(matches) == 1:
+            return matches[0]
+        if len(matches) > 1:
+            raise ValueError(
+                f"ambiguous run_id: {run_id} requires work_unit scope inside current project scope {project.project_id}"
+            )
+        raise ValueError(
+            f"unknown run_id: {run_id} in current project scope {project.project_id}"
+        )
+
+    matches = [
+        work_unit.runs[run_id]
+        for project in context.state.projects.values()
+        for work_unit in project.work_units.values()
+        if run_id in work_unit.runs
+    ]
+    if len(matches) == 1:
+        return matches[0]
+    if len(matches) > 1:
+        raise ValueError(f"ambiguous run_id: {run_id} requires project or work_unit scope")
     raise ValueError(f"unknown run_id: {run_id}")
 
 

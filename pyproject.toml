@@ -1,7 +1,15 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "jeff"
 version = "0.1.0"
 requires-python = ">=3.11"
+readme = "README.md"
+
+[project.scripts]
+jeff = "jeff.main:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
