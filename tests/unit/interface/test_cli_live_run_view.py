@@ -1,6 +1,6 @@
 from jeff.interface import JeffCLI
 
-from tests.cli_test_helpers import build_interface_context_with_flow
+from tests.fixtures.cli import build_interface_context_with_flow
 
 
 def test_live_run_view_shows_flow_family_stage_module_and_health() -> None:

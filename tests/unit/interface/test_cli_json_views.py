@@ -2,7 +2,7 @@ import json
 
 from jeff.interface import JeffCLI
 
-from tests.cli_test_helpers import build_interface_context_with_flow
+from tests.fixtures.cli import build_interface_context_with_flow
 
 
 def test_show_json_view_preserves_truth_support_and_derived_distinctions() -> None:

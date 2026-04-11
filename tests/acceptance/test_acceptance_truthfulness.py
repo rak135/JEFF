@@ -7,7 +7,7 @@ from jeff.governance import CurrentTruthSnapshot, Policy, evaluate_action_entry
 from jeff.interface import JeffCLI
 from jeff.orchestrator import run_flow
 
-from tests.cli_test_helpers import build_interface_context_with_flow, build_state_with_run
+from tests.fixtures.cli import build_interface_context_with_flow, build_state_with_run
 
 
 def test_approval_gated_flow_stops_honestly_before_execution() -> None:

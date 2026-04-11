@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from tests.entrypoint_test_helpers import REPO_ROOT, run_jeff
+from tests.fixtures.entrypoint import REPO_ROOT, run_jeff
 
 
 README_PATH = REPO_ROOT / "README.md"
@@ -12,7 +12,10 @@ def test_readme_documents_current_start_path_tests_and_deferrals() -> None:
     assert "python -m jeff" in readme
     assert "python -m jeff --bootstrap-check" in readme
     assert "python -m jeff --command \"/show run-1\" --json" in readme
-    assert "python -m pytest -q tests/test_bootstrap_smoke.py tests/test_cli_entry_smoke.py tests/test_quickstart_paths.py" in readme
+    assert (
+        "python -m pytest -q tests/smoke/test_bootstrap_smoke.py "
+        "tests/smoke/test_cli_entry_smoke.py tests/smoke/test_quickstart_paths.py"
+    ) in readme
     assert "- GUI" in readme
     assert "- broad API bridge" in readme
     assert "- advanced memory backend" in readme

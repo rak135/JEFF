@@ -148,7 +148,7 @@
   - jeff/interface/commands.py
   - jeff/interface/json_views.py
 
-## 2026-04-11 10:29 - Phase 7B startup and packaging
+## 2026-04-11 10:29 - TASK: M-007B - startup and packaging
 
 - Scope: Phase 7B package entrypoint, demo bootstrap, startup docs, and smoke coverage
 - Done:
@@ -169,7 +169,7 @@
   - tests/test_cli_entry_smoke.py
   - tests/test_quickstart_paths.py
 
-## 2026-04-11 10:45 - Evaluation layer alignment cleanup
+## 2026-04-11 10:45 - TASK: M-007C - Evaluation layer alignment cleanup
 
 - Scope: Cognitive-layer relocation of evaluation plus import, ownership, and note cleanup
 - Done:
@@ -190,7 +190,7 @@
   - jeff/orchestrator/validation.py
   - tests/test_evaluation_layer_alignment.py
 
-## 2026-04-11 11:19 - Added repo and module handoff surfaces
+## 2026-04-11 11:19 - TASK: M-007D - Added repo and module handoff surfaces
 
 - Scope: repo-level and module-level continuation handoffs for the current Jeff v1 baseline
 - Done:
@@ -209,3 +209,24 @@
   - jeff/memory/HANDOFF.md
   - jeff/orchestrator/HANDOFF.md
   - jeff/interface/HANDOFF.md  
+
+## 2026-04-11 11:26 - TASK: M-007E - Reorganized tests by family and layer
+
+- Scope: test-suite structure under `tests/` for family buckets, layer ownership, and cross-layer boundaries
+- Done:
+  - moved smoke, acceptance, and anti-drift tests into dedicated family directories
+  - redistributed layer-owned tests under `tests/unit/core`, `governance`, `cognitive`, `action`, `memory`, `orchestrator`, and `interface`
+  - moved cross-layer boundary tests into `tests/integration`
+  - moved shared subprocess and CLI builders into `tests/fixtures` and updated helper imports
+  - updated the README smoke command to match the new paths
+- Validation: `python -m pytest -q tests/smoke` passed with 12 tests; `python -m pytest -q tests/unit/core tests/unit/interface` passed with 29 tests; `python -m pytest -q tests/acceptance tests/integration` passed with 23 tests; `python -m pytest -q tests/antidrift tests/unit/orchestrator` passed with 22 tests; `python -m pytest -q` passed with 132 tests
+- Current state: the test suite now matches the repo's test-family and layer-ownership model without changing test semantics
+- Next step: keep new tests in the matching family/layer bucket as the suite grows
+- Files:
+  - tests/smoke/
+  - tests/acceptance/
+  - tests/antidrift/
+  - tests/unit/
+  - tests/integration/
+  - tests/fixtures/
+  - README.md  

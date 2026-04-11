@@ -1,6 +1,6 @@
 from jeff.bootstrap import build_demo_interface_context, run_startup_preflight
 
-from tests.entrypoint_test_helpers import run_jeff
+from tests.fixtures.entrypoint import run_jeff
 
 
 def test_demo_context_bootstraps_with_project_run_and_flow() -> None:

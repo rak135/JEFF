@@ -1,6 +1,6 @@
 import json
 
-from tests.entrypoint_test_helpers import run_jeff
+from tests.fixtures.entrypoint import run_jeff
 
 
 def test_one_shot_help_reaches_cli_surface() -> None:

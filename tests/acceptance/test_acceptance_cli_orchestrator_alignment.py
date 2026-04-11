@@ -2,7 +2,7 @@ import json
 
 from jeff.interface import JeffCLI
 
-from tests.cli_test_helpers import build_interface_context_with_flow
+from tests.fixtures.cli import build_interface_context_with_flow
 
 
 def test_cli_inspect_trace_and_lifecycle_stay_aligned_with_orchestrator_truth() -> None:

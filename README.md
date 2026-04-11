@@ -84,7 +84,7 @@ Useful demo commands after startup:
 Run the bounded bootstrap and smoke path:
 
 ```text
-python -m pytest -q tests/test_bootstrap_smoke.py tests/test_cli_entry_smoke.py tests/test_quickstart_paths.py
+python -m pytest -q tests/smoke/test_bootstrap_smoke.py tests/smoke/test_cli_entry_smoke.py tests/smoke/test_quickstart_paths.py
 ```
 
 Run the full suite:

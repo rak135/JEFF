@@ -1,6 +1,6 @@
 from jeff.interface import JeffCLI
 
-from tests.cli_test_helpers import build_interface_context, build_interface_context_with_flow
+from tests.fixtures.cli import build_interface_context, build_interface_context_with_flow
 
 
 def test_session_scope_changes_do_not_mutate_canonical_state() -> None:

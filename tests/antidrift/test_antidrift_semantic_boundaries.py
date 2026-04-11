@@ -24,7 +24,7 @@ from jeff.memory import (
 )
 from jeff.orchestrator import run_flow
 
-from tests.cli_test_helpers import build_interface_context_with_flow
+from tests.fixtures.cli import build_interface_context_with_flow
 
 
 def _state_with_two_projects() -> GlobalState:
