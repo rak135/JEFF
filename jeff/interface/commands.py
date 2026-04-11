@@ -2,21 +2,33 @@
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass, field
 import json
 import re
 import shlex
 from typing import Mapping
 
+from jeff.cognitive import (
+    ResearchArtifactRecord,
+    ResearchArtifactStore,
+    ResearchRequest,
+    handoff_persisted_research_record_to_memory,
+    run_and_persist_document_research,
+    run_and_persist_web_research,
+)
 from jeff.core.containers.models import Project, Run, WorkUnit
 from jeff.core.schemas import Scope
 from jeff.core.state.models import GlobalState
 from jeff.core.transition import TransitionRequest, apply_transition
+from jeff.infrastructure import InfrastructureServices
+from jeff.memory import InMemoryMemoryStore, MemoryWriteDecision
 from jeff.orchestrator import FlowRunResult
 
 from .json_views import (
     lifecycle_json,
     project_list_json,
+    research_result_json,
     request_receipt_json,
     run_list_json,
     run_show_json,
@@ -28,6 +40,7 @@ from .render import (
     render_help,
     render_lifecycle,
     render_project_list,
+    render_research_result,
     render_request_receipt,
     render_run_list,
     render_run_show,
@@ -42,6 +55,17 @@ from .session import CliSession
 class InterfaceContext:
     state: GlobalState
     flow_runs: Mapping[str, FlowRunResult] = field(default_factory=dict)
+    infrastructure_services: InfrastructureServices | None = None
+    research_artifact_store: ResearchArtifactStore | None = None
+    memory_store: InMemoryMemoryStore | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ResearchCommandSpec:
+    mode: str
+    question: str
+    inputs: tuple[str, ...]
+    handoff_memory: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,6 +74,9 @@ class CommandResult:
     session: CliSession
     text: str
     json_payload: dict[str, object] | None = None
+
+
+GENERAL_RESEARCH_PROJECT_ID = "general_research"
 
 
 def execute_command(
@@ -89,6 +116,14 @@ def execute_command(
         return _apply_json_mode(result, json_output=json_output)
     if tokens[0] == "lifecycle":
         result = _lifecycle_command(tokens=tokens, session=session, context=context)
+        return _apply_json_mode(result, json_output=json_output)
+    if tokens[0] == "research":
+        result = _research_command(
+            command_line=command_line,
+            tokens=tokens,
+            session=session,
+            context=context,
+        )
         return _apply_json_mode(result, json_output=json_output)
     if tokens[0] in {"approve", "reject", "retry", "revalidate", "recover"}:
         result = _request_command(tokens=tokens, session=session, context=context)
@@ -268,6 +303,55 @@ def _lifecycle_command(*, tokens: list[str], session: CliSession, context: Inter
     return CommandResult(context=context, session=next_session, text=text, json_payload=payload)
 
 
+def _research_command(
+    *,
+    command_line: str,
+    tokens: list[str],
+    session: CliSession,
+    context: InterfaceContext,
+) -> CommandResult:
+    spec = _parse_research_command(command_line=command_line, tokens=tokens)
+    project, work_unit, run, next_session, next_context, scope_notice = _resolve_research_scope(
+        mode=spec.mode,
+        question=spec.question,
+        session=session,
+        context=context,
+    )
+    research_request = ResearchRequest(
+        question=spec.question,
+        project_id=str(project.project_id),
+        work_unit_id=str(work_unit.work_unit_id),
+        run_id=str(run.run_id),
+        source_mode="local_documents" if spec.mode == "docs" else "web",
+        document_paths=spec.inputs if spec.mode == "docs" else (),
+        web_queries=spec.inputs if spec.mode == "web" else (),
+    )
+    record = _run_research_backend(
+        spec=spec,
+        research_request=research_request,
+        context=next_context,
+    )
+    memory_handoff_result = _maybe_handoff_research_record_to_memory(
+        context=next_context,
+        spec=spec,
+        record=record,
+    )
+    payload = research_result_json(
+        project_id=str(project.project_id),
+        work_unit_id=str(work_unit.work_unit_id),
+        run_id=str(run.run_id),
+        research_mode=spec.mode,
+        handoff_memory_requested=spec.handoff_memory,
+        record=record,
+        memory_handoff_result=memory_handoff_result,
+        session=next_session,
+    )
+    text = render_research_result(payload)
+    if scope_notice is not None:
+        text = f"{scope_notice}\n{text}"
+    return CommandResult(context=next_context, session=next_session, text=text, json_payload=payload)
+
+
 def _request_command(*, tokens: list[str], session: CliSession, context: InterfaceContext) -> CommandResult:
     request_type = tokens[0]
     target_run = _resolve_run_from_tokens(tokens=tokens, session=session, context=context, command_name=tokens[0])
@@ -444,6 +528,141 @@ def _resolve_historical_run(
     return run, next_session, f"auto-selected current run: {run.run_id}"
 
 
+def _parse_research_command(*, command_line: str, tokens: list[str]) -> ResearchCommandSpec:
+    if len(tokens) < 2:
+        raise ValueError("research command requires 'research docs' or 'research web'")
+
+    mode = tokens[1]
+    if mode not in {"docs", "web"}:
+        raise ValueError("research mode must be 'docs' or 'web'")
+
+    normalized = command_line.strip()
+    if normalized.startswith("/"):
+        normalized = normalized[1:]
+    match = re.match(r"^research\s+(docs|web)\s+(?P<rest>.+)$", normalized)
+    if match is None:
+        raise ValueError("research command requires a quoted question/objective")
+
+    rest = match.group("rest").lstrip()
+    if not rest or rest[0] not in {'"', "'"}:
+        raise ValueError("research command requires a quoted question/objective immediately after the mode")
+
+    parsed_rest = shlex.split(rest)
+    if not parsed_rest:
+        raise ValueError("research command requires a quoted question/objective")
+
+    question = parsed_rest[0].strip()
+    if not question:
+        raise ValueError("research question/objective must be non-empty")
+
+    handoff_memory = False
+    inputs = list(parsed_rest[1:])
+    if "--handoff-memory" in inputs:
+        if inputs.count("--handoff-memory") > 1 or inputs[-1] != "--handoff-memory":
+            raise ValueError("research accepts only one trailing optional flag: --handoff-memory")
+        handoff_memory = True
+        inputs = inputs[:-1]
+
+    unsupported_flags = [item for item in inputs if item.startswith("--")]
+    if unsupported_flags:
+        raise ValueError(f"unsupported research flag: {unsupported_flags[0]}")
+
+    if mode == "docs" and not inputs:
+        raise ValueError("research docs requires at least one explicit path after the quoted question/objective")
+    if mode == "web" and not inputs:
+        raise ValueError("research web requires at least one explicit query after the quoted question/objective")
+
+    return ResearchCommandSpec(
+        mode=mode,
+        question=question,
+        inputs=tuple(inputs),
+        handoff_memory=handoff_memory,
+    )
+
+
+def _resolve_research_scope(
+    *,
+    mode: str,
+    question: str,
+    session: CliSession,
+    context: InterfaceContext,
+) -> tuple[Project, WorkUnit, Run, CliSession, InterfaceContext, str | None]:
+    if session.scope.project_id is None:
+        return _resolve_general_research_scope(
+            mode=mode,
+            question=question,
+            session=session,
+            context=context,
+        )
+
+    project = _require_scoped_project(session, context)
+    if session.scope.work_unit_id is None:
+        raise ValueError(
+            "research requires current work_unit scope inside the selected project. "
+            "Use /work list, then /work use <work_unit_id>; or /scope clear for ad-hoc general_research."
+        )
+    work_unit = _get_work_unit(project, session.scope.work_unit_id)
+    run, next_session, next_context, notice = _resolve_or_create_active_run(
+        session=session,
+        context=context,
+        project=project,
+        work_unit=work_unit,
+    )
+    return project, work_unit, run, next_session, next_context, notice
+
+
+def _resolve_general_research_scope(
+    *,
+    mode: str,
+    question: str,
+    session: CliSession,
+    context: InterfaceContext,
+) -> tuple[Project, WorkUnit, Run, CliSession, InterfaceContext, str]:
+    next_context = context
+    notices: list[str] = []
+
+    project, next_context, created_project = _ensure_project_exists(
+        context=next_context,
+        project_id=GENERAL_RESEARCH_PROJECT_ID,
+        name="General Research",
+    )
+    if created_project:
+        notices.append(f"created built-in project: {GENERAL_RESEARCH_PROJECT_ID}")
+
+    work_unit_id = _general_research_work_unit_id(mode=mode, question=question)
+    objective = f"Ad-hoc {mode} research: {question}"
+    work_unit, next_context, created_work_unit = _ensure_work_unit_exists(
+        context=next_context,
+        project=project,
+        work_unit_id=work_unit_id,
+        objective=objective,
+    )
+    if created_work_unit:
+        notices.append(f"created ad-hoc research work_unit: {work_unit_id}")
+
+    scoped_session = session.with_scope(
+        project_id=str(project.project_id),
+        work_unit_id=str(work_unit.work_unit_id),
+        run_id=None,
+    )
+    run, next_session, next_context, run_notice = _resolve_or_create_active_run(
+        session=scoped_session,
+        context=next_context,
+        project=project,
+        work_unit=work_unit,
+    )
+    notices.insert(
+        0,
+        (
+            "anchored ad-hoc research into "
+            f"project_id={project.project_id} work_unit_id={work_unit.work_unit_id}"
+        ),
+    )
+    if run_notice is not None:
+        notices.append(run_notice)
+    return project, work_unit, run, next_session, next_context, "\n".join(notices)
+
+
 def _resolve_or_create_active_run(
     *,
     session: CliSession,
@@ -506,10 +725,127 @@ def _create_run_for_work_unit(
     if result.transition_result != "committed":
         issue = result.validation_errors[0].message if result.validation_errors else "unknown transition failure"
         raise ValueError(f"automatic run creation failed: {issue}")
-    next_context = InterfaceContext(state=result.state, flow_runs=context.flow_runs)
+    next_context = _replace_context_state(context, result.state)
     created_project = _get_project(next_context, str(project.project_id))
     created_work_unit = _get_work_unit(created_project, str(work_unit.work_unit_id))
     return _get_run(created_work_unit, next_run_id), next_context
+
+
+def _ensure_project_exists(
+    *,
+    context: InterfaceContext,
+    project_id: str,
+    name: str,
+) -> tuple[Project, InterfaceContext, bool]:
+    if project_id in context.state.projects:
+        return context.state.projects[project_id], context, False
+
+    result = apply_transition(
+        context.state,
+        TransitionRequest(
+            transition_id=f"transition-auto-create-project-{project_id}",
+            transition_type="create_project",
+            basis_state_version=context.state.state_meta.state_version,
+            scope=Scope(project_id=project_id),
+            payload={"name": name},
+        ),
+    )
+    if result.transition_result != "committed":
+        issue = result.validation_errors[0].message if result.validation_errors else "unknown transition failure"
+        raise ValueError(f"automatic project creation failed: {issue}")
+
+    next_context = _replace_context_state(context, result.state)
+    return _get_project(next_context, project_id), next_context, True
+
+
+def _ensure_work_unit_exists(
+    *,
+    context: InterfaceContext,
+    project: Project,
+    work_unit_id: str,
+    objective: str,
+) -> tuple[WorkUnit, InterfaceContext, bool]:
+    if work_unit_id in project.work_units:
+        return project.work_units[work_unit_id], context, False
+
+    result = apply_transition(
+        context.state,
+        TransitionRequest(
+            transition_id=f"transition-auto-create-work-unit-{project.project_id}-{work_unit_id}",
+            transition_type="create_work_unit",
+            basis_state_version=context.state.state_meta.state_version,
+            scope=Scope(project_id=str(project.project_id)),
+            payload={"work_unit_id": work_unit_id, "objective": objective},
+        ),
+    )
+    if result.transition_result != "committed":
+        issue = result.validation_errors[0].message if result.validation_errors else "unknown transition failure"
+        raise ValueError(f"automatic work unit creation failed: {issue}")
+
+    next_context = _replace_context_state(context, result.state)
+    next_project = _get_project(next_context, str(project.project_id))
+    return _get_work_unit(next_project, work_unit_id), next_context, True
+
+
+def _run_research_backend(
+    *,
+    spec: ResearchCommandSpec,
+    research_request: ResearchRequest,
+    context: InterfaceContext,
+) -> ResearchArtifactRecord:
+    infrastructure_services = _require_research_infrastructure(context)
+    artifact_store = _require_research_store(context)
+    if spec.mode == "docs":
+        return run_and_persist_document_research(research_request, infrastructure_services, artifact_store)
+    return run_and_persist_web_research(research_request, infrastructure_services, artifact_store)
+
+
+def _maybe_handoff_research_record_to_memory(
+    *,
+    context: InterfaceContext,
+    spec: ResearchCommandSpec,
+    record: ResearchArtifactRecord,
+) -> MemoryWriteDecision | None:
+    if not spec.handoff_memory:
+        return None
+    memory_store = _require_memory_store(context)
+    return handoff_persisted_research_record_to_memory(record, memory_store)
+
+
+def _require_research_infrastructure(context: InterfaceContext) -> InfrastructureServices:
+    if context.infrastructure_services is None:
+        raise ValueError("research runtime is not configured for this CLI context")
+    return context.infrastructure_services
+
+
+def _require_research_store(context: InterfaceContext) -> ResearchArtifactStore:
+    if context.research_artifact_store is None:
+        raise ValueError("research artifact persistence store is not configured for this CLI context")
+    return context.research_artifact_store
+
+
+def _require_memory_store(context: InterfaceContext) -> InMemoryMemoryStore:
+    if context.memory_store is None:
+        raise ValueError("memory store is not configured for research handoff in this CLI context")
+    return context.memory_store
+
+
+def _replace_context_state(context: InterfaceContext, state: GlobalState) -> InterfaceContext:
+    return InterfaceContext(
+        state=state,
+        flow_runs=context.flow_runs,
+        infrastructure_services=context.infrastructure_services,
+        research_artifact_store=context.research_artifact_store,
+        memory_store=context.memory_store,
+    )
+
+
+def _general_research_work_unit_id(*, mode: str, question: str) -> str:
+    slug_parts = re.findall(r"[a-z0-9]+", question.lower())
+    slug = "-".join(slug_parts[:8]) or "question"
+    slug = slug[:48].strip("-")
+    digest = hashlib.sha1(f"{mode}|{question}".encode("utf-8")).hexdigest()[:8]
+    return f"research-{mode}-{slug}-{digest}"
 
 
 def _next_run_id(work_unit: WorkUnit) -> str:

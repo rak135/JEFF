@@ -175,6 +175,53 @@ def render_request_receipt(payload: dict[str, Any]) -> str:
     )
 
 
+def render_research_result(payload: dict[str, Any]) -> str:
+    truth = payload["truth"]
+    derived = payload["derived"]
+    support = payload["support"]
+
+    lines = [
+        (
+            f"RESEARCH {derived['research_mode']} "
+            f"project_id={truth['project_id']} work_unit_id={truth['work_unit_id']} run_id={truth['run_id']}"
+        ),
+        f"artifact_id={support['artifact_id']}",
+        f"question={support['question']}",
+        f"summary={support['summary']}",
+        "[support] findings",
+    ]
+    for finding in support["findings"]:
+        refs = ", ".join(finding["source_refs"])
+        lines.append(f"- {finding['text']} [sources: {refs}]")
+
+    lines.append("[support] uncertainties")
+    if support["uncertainties"]:
+        for uncertainty in support["uncertainties"]:
+            lines.append(f"- {uncertainty}")
+    else:
+        lines.append("- none")
+
+    lines.append(f"recommendation={support['recommendation'] or '-'}")
+    lines.append("persistence=research artifact persisted as support by default")
+
+    if not derived["handoff_memory_requested"]:
+        lines.append("memory_handoff=not requested")
+        return "\n".join(lines)
+
+    handoff_result = derived["memory_handoff_result"]
+    if not derived["memory_handoff_performed"] or handoff_result is None:
+        lines.append("memory_handoff=requested but not performed")
+        return "\n".join(lines)
+
+    handoff_line = f"memory_handoff={handoff_result['write_outcome']}"
+    if handoff_result["memory_id"] is not None:
+        handoff_line += f" memory_id={handoff_result['memory_id']}"
+    lines.append(handoff_line)
+    for reason in handoff_result["reasons"]:
+        lines.append(f"- memory_reason: {reason}")
+    return "\n".join(lines)
+
+
 def render_help() -> str:
     return "\n".join(
         [
@@ -192,6 +239,9 @@ def render_help() -> str:
             "- /run list",
             "- /run use <run_id>",
             "- /show [run_id]",
+            "Research:",
+            '- /research docs "<question>" <path1> [<path2> ...] [--handoff-memory]',
+            '- /research web "<question>" <query1> [<query2> ...] [--handoff-memory]',
             "Current startup uses explicit in-memory demo state only.",
             "",
             "Commands:",
@@ -207,6 +257,8 @@ def render_help() -> str:
             "/show [run_id]",
             "/trace [run_id]",
             "/lifecycle [run_id]",
+            '/research docs "<question>" <path1> [<path2> ...] [--handoff-memory]',
+            '/research web "<question>" <query1> [<query2> ...] [--handoff-memory]',
             "/mode <compact|debug>",
             "/json <on|off>",
             "/approve [run_id]",

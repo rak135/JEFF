@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from dataclasses import asdict
 from datetime import datetime
 from typing import Any
 
+from jeff.cognitive import ResearchArtifactRecord
 from jeff.core.containers.models import Project, Run, WorkUnit
+from jeff.memory import MemoryWriteDecision
 from jeff.orchestrator import FlowRunResult
 
 from .session import CliSession
@@ -170,6 +173,55 @@ def request_receipt_json(
     }
 
 
+def research_result_json(
+    *,
+    project_id: str,
+    work_unit_id: str,
+    run_id: str,
+    research_mode: str,
+    handoff_memory_requested: bool,
+    record: ResearchArtifactRecord,
+    memory_handoff_result: MemoryWriteDecision | None,
+    session: CliSession,
+) -> dict[str, Any]:
+    return {
+        "view": "research_result",
+        "truth": {
+            "project_id": project_id,
+            "work_unit_id": work_unit_id,
+            "run_id": run_id,
+        },
+        "derived": {
+            "research_mode": research_mode,
+            "handoff_memory_requested": handoff_memory_requested,
+            "memory_handoff_performed": memory_handoff_result is not None,
+            "memory_handoff_result": _memory_handoff_json(memory_handoff_result),
+        },
+        "support": {
+            "artifact_id": record.artifact_id,
+            "question": record.question,
+            "summary": record.summary,
+            "findings": [
+                {
+                    "text": finding.text,
+                    "source_refs": list(finding.source_refs),
+                }
+                for finding in record.findings
+            ],
+            "uncertainties": list(record.uncertainties),
+            "recommendation": record.recommendation,
+            "source_ids": list(record.source_ids),
+        },
+        "session": {
+            "project_id": session.scope.project_id,
+            "work_unit_id": session.scope.work_unit_id,
+            "run_id": session.scope.run_id,
+            "output_mode": session.output_mode,
+            "json_output": session.json_output,
+        },
+    }
+
+
 def routing_json(flow_run: FlowRunResult) -> dict[str, Any] | None:
     if flow_run.routing_decision is None:
         return None
@@ -256,3 +308,22 @@ def _module_for_stage(stage: str | None) -> str | None:
 
 def _selected_proposal_id(selection: Any) -> str | None:
     return None if selection.selected_proposal_id is None else str(selection.selected_proposal_id)
+
+
+def _memory_handoff_json(memory_handoff_result: MemoryWriteDecision | None) -> dict[str, Any] | None:
+    if memory_handoff_result is None:
+        return None
+    payload = {
+        "write_outcome": memory_handoff_result.write_outcome,
+        "candidate_id": str(memory_handoff_result.candidate_id),
+        "memory_id": None if memory_handoff_result.memory_id is None else str(memory_handoff_result.memory_id),
+        "reasons": list(memory_handoff_result.reasons),
+    }
+    if memory_handoff_result.committed_record is not None:
+        payload["committed_record"] = {
+            **asdict(memory_handoff_result.committed_record),
+            "memory_id": str(memory_handoff_result.committed_record.memory_id),
+        }
+    else:
+        payload["committed_record"] = None
+    return payload
