@@ -242,12 +242,20 @@ def _install_ollama_stub(
 ) -> None:
     def _fake_urlopen(http_request, timeout=None):  # type: ignore[no-untyped-def]
         captured_timeouts.append(timeout)
-        return _FakeHttpResponse(
-            {
+        if http_request.full_url.endswith("/api/chat"):
+            response_payload = {
+                "message": {"content": json.dumps(output_json)},
+                "prompt_eval_count": 11,
+                "eval_count": 17,
+            }
+        else:
+            response_payload = {
                 "response": json.dumps(output_json),
                 "prompt_eval_count": 11,
                 "eval_count": 17,
             }
+        return _FakeHttpResponse(
+            response_payload
         )
 
     monotonic_values = iter((100.0, 100.05, 101.0, 101.04))

@@ -47,6 +47,18 @@ def test_cli_research_works_with_runtime_config_and_anchors_general_research(
     assert cli.session.scope.project_id == "general_research"
     assert captured_payloads[0]["model"] == "qwen2.5:14b"
     assert captured_payloads[0]["options"] == {"num_ctx": 16384}
+    assert captured_payloads[0]["__url"] == "http://127.0.0.1:11434/api/chat"
+    assert captured_payloads[0]["messages"][0]["role"] == "system"
+    assert captured_payloads[0]["messages"][1]["role"] == "user"
+    assert captured_payloads[0]["format"]["type"] == "object"
+    assert captured_payloads[0]["format"]["required"] == [
+        "summary",
+        "findings",
+        "inferences",
+        "uncertainties",
+        "recommendation",
+    ]
+    assert "think" not in captured_payloads[0]
     assert artifact_files
 
 
@@ -153,13 +165,23 @@ def _install_ollama_stub(
 ) -> None:
     def _fake_urlopen(http_request, timeout=None):  # type: ignore[no-untyped-def]
         del timeout
-        captured_payloads.append(json.loads(http_request.data.decode("utf-8")))
-        return _FakeHttpResponse(
-            {
+        payload = json.loads(http_request.data.decode("utf-8"))
+        payload["__url"] = http_request.full_url
+        captured_payloads.append(payload)
+        if http_request.full_url.endswith("/api/chat"):
+            response_payload = {
+                "message": {"content": json.dumps(output_json)},
+                "prompt_eval_count": 11,
+                "eval_count": 17,
+            }
+        else:
+            response_payload = {
                 "response": json.dumps(output_json),
                 "prompt_eval_count": 11,
                 "eval_count": 17,
             }
+        return _FakeHttpResponse(
+            response_payload
         )
 
     monotonic_values = iter((100.0, 100.05, 101.0, 101.04, 102.0, 102.03, 103.0, 103.02))

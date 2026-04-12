@@ -114,9 +114,51 @@ def test_runtime_repair_flow_still_fails_closed_when_repair_also_malformed() -> 
     assert len(adapter.requests) == 2
 
 
-def test_runtime_primary_schema_incomplete_output_fails_before_citation_remap() -> None:
+def test_runtime_primary_schema_incomplete_output_triggers_repair_before_citation_remap() -> None:
     adapter = _ScriptedAdapter(
         script=(
+            {
+                "findings": [{"text": "Observed fact", "source_refs": ["S1"]}],
+                "inferences": [],
+                "uncertainties": [],
+                "recommendation": None,
+            },
+            {
+                "summary": "Repaired summary.",
+                "findings": [{"text": "Observed fact", "source_refs": ["S1"]}],
+                "inferences": [],
+                "uncertainties": [],
+                "recommendation": None,
+            },
+        )
+    )
+    events: list[dict[str, object]] = []
+
+    artifact = synthesize_research_with_runtime(
+        research_request=_research_request(),
+        evidence_pack=_evidence_pack(),
+        infrastructure_services=_services(adapter),
+        debug_emitter=events.append,
+    )
+
+    assert artifact.summary == "Repaired summary."
+    checkpoints = [event["checkpoint"] for event in events]
+    assert "primary_synthesis_failed" in checkpoints
+    assert "primary_synthesis_succeeded" not in checkpoints
+    assert "repair_pass_started" in checkpoints
+    assert "repair_pass_succeeded" in checkpoints
+    assert len(adapter.requests) == 2
+
+
+def test_runtime_primary_schema_incomplete_output_fails_before_citation_remap_when_repair_also_incomplete() -> None:
+    adapter = _ScriptedAdapter(
+        script=(
+            {
+                "findings": [{"text": "Observed fact", "source_refs": ["S1"]}],
+                "inferences": [],
+                "uncertainties": [],
+                "recommendation": None,
+            },
             {
                 "findings": [{"text": "Observed fact", "source_refs": ["S1"]}],
                 "inferences": [],
@@ -138,14 +180,21 @@ def test_runtime_primary_schema_incomplete_output_fails_before_citation_remap() 
     checkpoints = [event["checkpoint"] for event in events]
     assert "primary_synthesis_failed" in checkpoints
     assert "primary_synthesis_succeeded" not in checkpoints
+    assert "repair_pass_started" in checkpoints
+    assert "repair_pass_failed" in checkpoints
     assert "citation_remap_started" not in checkpoints
-    assert len(adapter.requests) == 1
+    assert len(adapter.requests) == 2
 
 
 def test_runtime_repair_flow_fails_at_repair_boundary_when_summary_is_missing() -> None:
     adapter = _ScriptedAdapter(
         script=(
-            ModelMalformedOutputError("primary malformed", raw_output="summary: bad"),
+            {
+                "findings": [{"text": "Observed fact", "source_refs": ["S1"]}],
+                "inferences": [],
+                "uncertainties": [],
+                "recommendation": None,
+            },
             {
                 "findings": [{"text": "Observed fact", "source_refs": ["S1"]}],
                 "inferences": [],
@@ -156,7 +205,7 @@ def test_runtime_repair_flow_fails_at_repair_boundary_when_summary_is_missing() 
     )
     events: list[dict[str, object]] = []
 
-    with pytest.raises(ResearchSynthesisRuntimeError, match="malformed_output"):
+    with pytest.raises(ResearchSynthesisValidationError, match="summary must be a non-empty string"):
         synthesize_research_with_runtime(
             research_request=_research_request(),
             evidence_pack=_evidence_pack(),
@@ -165,6 +214,7 @@ def test_runtime_repair_flow_fails_at_repair_boundary_when_summary_is_missing() 
         )
 
     checkpoints = [event["checkpoint"] for event in events]
+    assert "repair_pass_started" in checkpoints
     assert "repair_pass_failed" in checkpoints
     assert "repair_pass_succeeded" not in checkpoints
     assert "citation_remap_started" not in checkpoints

@@ -1,3 +1,5 @@
+from dataclasses import dataclass
+
 import pytest
 
 from jeff.cognitive import (
@@ -5,7 +7,6 @@ from jeff.cognitive import (
     EvidencePack,
     ResearchArtifact,
     ResearchRequest,
-    ResearchSynthesisError,
     ResearchSynthesisRuntimeError,
     ResearchSynthesisValidationError,
     SourceItem,
@@ -119,6 +120,8 @@ def test_primary_output_missing_summary_is_not_treated_as_success() -> None:
     checkpoints = [event["checkpoint"] for event in events]
     assert "primary_synthesis_failed" in checkpoints
     assert "primary_synthesis_succeeded" not in checkpoints
+    assert "repair_pass_started" in checkpoints
+    assert "repair_pass_failed" in checkpoints
     assert "citation_remap_started" not in checkpoints
     failure_event = next(event for event in events if event["checkpoint"] == "primary_synthesis_failed")
     assert failure_event["payload"]["failure_class"] == "schema_incomplete"
@@ -149,6 +152,74 @@ def test_primary_synthesis_succeeded_is_emitted_only_after_root_shape_gate_passe
     assert "primary_synthesis_succeeded" in checkpoints
     assert "citation_remap_started" in checkpoints
     assert checkpoints.index("primary_synthesis_succeeded") < checkpoints.index("citation_remap_started")
+
+
+def test_primary_schema_incomplete_json_can_succeed_via_one_repair_pass() -> None:
+    events: list[dict[str, object]] = []
+    adapter = _ScriptedAdapter(
+        script=(
+            {
+                "findings": [{"text": "Observed fact", "source_refs": ["S1"]}],
+                "inferences": [],
+                "uncertainties": [],
+                "recommendation": None,
+            },
+            {
+                "summary": "Repaired summary.",
+                "findings": [{"text": "Observed fact", "source_refs": ["S1"]}],
+                "inferences": [],
+                "uncertainties": [],
+                "recommendation": None,
+            },
+        )
+    )
+
+    artifact = synthesize_research(
+        research_request=_research_request(),
+        evidence_pack=_evidence_pack(),
+        adapter=adapter,
+        debug_emitter=events.append,
+    )
+
+    assert artifact.summary == "Repaired summary."
+    checkpoints = [event["checkpoint"] for event in events]
+    assert "primary_synthesis_failed" in checkpoints
+    assert "primary_synthesis_succeeded" not in checkpoints
+    assert "repair_pass_started" in checkpoints
+    assert "repair_pass_succeeded" in checkpoints
+    assert checkpoints.index("primary_synthesis_failed") < checkpoints.index("repair_pass_started")
+    assert checkpoints.index("repair_pass_succeeded") < checkpoints.index("citation_remap_started")
+
+
+def test_primary_schema_incomplete_nested_field_mismatch_can_succeed_via_repair() -> None:
+    adapter = _ScriptedAdapter(
+        script=(
+            {
+                "summary": "Observed summary.",
+                "findings": [{"description": "Observed fact", "source_ref": "S1"}],
+                "inferences": [],
+                "uncertainties": [],
+                "recommendation": None,
+            },
+            {
+                "summary": "Observed summary.",
+                "findings": [{"text": "Observed fact", "source_refs": ["S1"]}],
+                "inferences": [],
+                "uncertainties": [],
+                "recommendation": None,
+            },
+        )
+    )
+
+    artifact = synthesize_research(
+        research_request=_research_request(),
+        evidence_pack=_evidence_pack(),
+        adapter=adapter,
+    )
+
+    assert artifact.summary == "Observed summary."
+    assert artifact.findings[0].text == "Observed fact"
+    assert artifact.findings[0].source_refs == ("source-a",)
 
 
 def test_unknown_citation_refs_in_returned_findings_fail_closed() -> None:
@@ -253,3 +324,33 @@ def _evidence_pack() -> EvidencePack:
         uncertainties=("External verification was not performed.",),
         constraints=("Constraint A",),
     )
+
+
+@dataclass(slots=True)
+class _ScriptedAdapter:
+    script: tuple[object, ...]
+    adapter_id: str = "research-scripted"
+    provider_name: str = "fake"
+    model_name: str = "research-model"
+    calls: int = 0
+
+    def invoke(self, request_model):  # type: ignore[no-untyped-def]
+        step = self.script[self.calls]
+        self.calls += 1
+        if isinstance(step, Exception):
+            raise step
+        assert isinstance(step, dict)
+        from jeff.infrastructure import ModelInvocationStatus, ModelResponse, ModelUsage
+
+        return ModelResponse(
+            request_id=request_model.request_id,
+            adapter_id=self.adapter_id,
+            provider_name=self.provider_name,
+            model_name=self.model_name,
+            status=ModelInvocationStatus.COMPLETED,
+            output_text=None,
+            output_json=step,
+            usage=ModelUsage(input_tokens=1, output_tokens=1, total_tokens=2, estimated_cost=0.0, latency_ms=1),
+            warnings=(),
+            raw_response_ref=f"fake://{self.adapter_id}/{request_model.request_id}",
+        )

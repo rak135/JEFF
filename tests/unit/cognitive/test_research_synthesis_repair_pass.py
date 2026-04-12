@@ -81,6 +81,33 @@ def test_repair_pass_uses_separate_repair_adapter_when_provided() -> None:
     assert repair_adapter.requests[0].metadata["adapter_id"] == "repair-formatter"
 
 
+def test_schema_incomplete_primary_output_triggers_exactly_one_repair_attempt() -> None:
+    adapter = _ScriptedAdapter(
+        script=(
+            {
+                "findings": [{"text": "Observed fact", "source_refs": ["S1"]}],
+                "inferences": [],
+                "uncertainties": [],
+                "recommendation": None,
+            },
+            {
+                "summary": "Repaired summary.",
+                "findings": [{"text": "Observed fact", "source_refs": ["S1"]}],
+                "inferences": [],
+                "uncertainties": [],
+                "recommendation": None,
+            },
+        )
+    )
+
+    artifact = synthesize_research(_research_request(), _evidence_pack(), adapter)
+
+    assert artifact.summary == "Repaired summary."
+    assert len(adapter.requests) == 2
+    assert adapter.requests[0].purpose == "research_synthesis"
+    assert adapter.requests[1].purpose == "research_synthesis_repair"
+
+
 def test_repair_request_keeps_citation_key_contract_without_raw_source_id_leak() -> None:
     adapter = _ScriptedAdapter(
         script=(
@@ -107,6 +134,36 @@ def test_repair_request_keeps_citation_key_contract_without_raw_source_id_leak()
     assert "source-a" not in repair_request.prompt
     assert "source-b" not in repair_request.prompt
     assert repair_request.metadata["citation_keys"] == ["S1", "S2"]
+
+
+def test_schema_incomplete_primary_output_serializes_near_miss_json_into_repair_prompt() -> None:
+    adapter = _ScriptedAdapter(
+        script=(
+            {
+                "summary": "Observed summary.",
+                "findings": [{"description": "Observed fact", "source_ref": "S1"}],
+                "inferences": [],
+                "uncertainties": [],
+                "recommendation": None,
+            },
+            {
+                "summary": "Observed summary.",
+                "findings": [{"text": "Observed fact", "source_refs": ["S1"]}],
+                "inferences": [],
+                "uncertainties": [],
+                "recommendation": None,
+            },
+        )
+    )
+
+    synthesize_research(_research_request(), _evidence_pack(), adapter)
+
+    repair_request = adapter.requests[1]
+
+    assert '"description":"Observed fact"' in repair_request.prompt
+    assert '"source_ref":"S1"' in repair_request.prompt
+    assert "source-a" not in repair_request.prompt
+    assert "source-b" not in repair_request.prompt
 
 
 def test_repair_prompt_requires_exact_json_typing_and_forbids_markdown() -> None:
@@ -207,7 +264,12 @@ def test_repaired_json_missing_summary_is_not_treated_as_success() -> None:
     events: list[dict[str, object]] = []
     adapter = _ScriptedAdapter(
         script=(
-            ModelMalformedOutputError("primary malformed", raw_output="summary: bad"),
+            {
+                "findings": [{"text": "Observed fact", "source_refs": ["S1"]}],
+                "inferences": [],
+                "uncertainties": [],
+                "recommendation": None,
+            },
             {
                 "findings": [{"text": "Observed fact", "source_refs": ["S1"]}],
                 "inferences": [],
@@ -217,15 +279,50 @@ def test_repaired_json_missing_summary_is_not_treated_as_success() -> None:
         )
     )
 
-    with pytest.raises(ResearchSynthesisRuntimeError, match="malformed_output"):
+    with pytest.raises(ResearchSynthesisValidationError, match="summary must be a non-empty string"):
         synthesize_research(_research_request(), _evidence_pack(), adapter, debug_emitter=events.append)
 
     checkpoints = [event["checkpoint"] for event in events]
+    assert "repair_pass_started" in checkpoints
     assert "repair_pass_failed" in checkpoints
     assert "repair_pass_succeeded" not in checkpoints
     failure_event = next(event for event in events if event["checkpoint"] == "repair_pass_failed")
     assert failure_event["payload"]["failure_class"] == "schema_incomplete"
     assert "summary must be a non-empty string" in str(failure_event["payload"]["reason"])
+
+
+def test_schema_incomplete_primary_output_with_wrong_nested_fields_emits_truthful_repair_debug() -> None:
+    events: list[dict[str, object]] = []
+    adapter = _ScriptedAdapter(
+        script=(
+            {
+                "summary": "Observed summary.",
+                "findings": [{"description": "Observed fact", "source_ref": "S1"}],
+                "inferences": [],
+                "uncertainties": [],
+                "recommendation": None,
+            },
+            {
+                "summary": "Observed summary.",
+                "findings": [{"text": "Observed fact", "source_refs": ["S1"]}],
+                "inferences": [],
+                "uncertainties": [],
+                "recommendation": None,
+            },
+        )
+    )
+
+    artifact = synthesize_research(_research_request(), _evidence_pack(), adapter, debug_emitter=events.append)
+
+    assert artifact.summary == "Observed summary."
+    checkpoints = [event["checkpoint"] for event in events]
+    assert "primary_synthesis_failed" in checkpoints
+    assert "primary_synthesis_succeeded" not in checkpoints
+    assert "repair_pass_started" in checkpoints
+    assert "repair_pass_succeeded" in checkpoints
+    failure_event = next(event for event in events if event["checkpoint"] == "primary_synthesis_failed")
+    assert failure_event["payload"]["failure_class"] == "schema_incomplete"
+    assert "text must be a non-empty string" in str(failure_event["payload"]["reason"])
 
 
 def test_schema_incomplete_repair_output_with_blank_summary_emits_repair_pass_failed() -> None:

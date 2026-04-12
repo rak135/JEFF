@@ -289,12 +289,13 @@ def _invoke_synthesis_payload_with_optional_repair(
         )
         if not isinstance(exc, ModelMalformedOutputError):
             raise _runtime_error_from_exception(exc, adapter=adapter) from exc
-        repaired_payload = _attempt_malformed_output_repair(
+        repaired_payload = _attempt_output_repair(
             research_request=research_request,
             evidence_pack=evidence_pack,
             repair_adapter=repair_adapter,
             model_request=model_request,
-            malformed_error=exc,
+            output_to_repair=getattr(exc, "raw_output", None),
+            repair_target_failure_class="malformed_output",
             debug_emitter=debug_emitter,
         )
         if repaired_payload is None:
@@ -304,7 +305,7 @@ def _invoke_synthesis_payload_with_optional_repair(
     if response.output_json is None:
         raise ResearchSynthesisValidationError("research synthesis requires JSON output")
     try:
-        validated_payload = _validate_root_shape_for_progression(response.output_json)
+        validated_payload = _validate_payload_for_progression(response.output_json)
     except ResearchSynthesisValidationError as exc:
         emit_research_debug_event(
             debug_emitter,
@@ -316,7 +317,18 @@ def _invoke_synthesis_payload_with_optional_repair(
             reason=_bounded_debug_text(str(exc)),
             raw_output_preview=_response_output_preview(response),
         )
-        raise
+        repaired_payload = _attempt_output_repair(
+            research_request=research_request,
+            evidence_pack=evidence_pack,
+            repair_adapter=repair_adapter,
+            model_request=model_request,
+            output_to_repair=_serialize_output_json_for_repair(response.output_json),
+            repair_target_failure_class="schema_incomplete",
+            debug_emitter=debug_emitter,
+        )
+        if repaired_payload is None:
+            raise
+        return repaired_payload
     emit_research_debug_event(
         debug_emitter,
         "primary_synthesis_succeeded",
@@ -465,43 +477,44 @@ def build_research_repair_model_request(
     )
 
 
-def _attempt_malformed_output_repair(
+def _attempt_output_repair(
     *,
     research_request: ResearchRequest,
     evidence_pack: EvidencePack,
     repair_adapter: ModelAdapter,
     model_request: ModelRequest,
-    malformed_error: ModelMalformedOutputError,
+    output_to_repair: str | None,
+    repair_target_failure_class: str,
     debug_emitter: ResearchDebugEmitter | None = None,
 ) -> dict[str, Any] | None:
-    raw_output = getattr(malformed_error, "raw_output", None)
-    if raw_output is None:
+    if output_to_repair is None:
         emit_research_debug_event(
             debug_emitter,
             "repair_pass_failed",
-            failure_class="malformed_output",
+            failure_class=repair_target_failure_class,
             adapter_id=repair_adapter.adapter_id,
             provider_name=getattr(repair_adapter, "provider_name", None),
             model_name=getattr(repair_adapter, "model_name", None),
-            reason="no repair input available from malformed output",
+            reason="no repair input available for invalid output",
         )
         return None
 
-    repair_input = _sanitize_repair_input(raw_output, build_citation_key_map(evidence_pack))
+    repair_input = _sanitize_repair_input(output_to_repair, build_citation_key_map(evidence_pack))
     emit_research_debug_event(
         debug_emitter,
         "repair_pass_started",
         adapter_id=repair_adapter.adapter_id,
         provider_name=getattr(repair_adapter, "provider_name", None),
         model_name=getattr(repair_adapter, "model_name", None),
+        repair_target_failure_class=repair_target_failure_class,
         allowed_citation_keys=list(build_citation_key_map(evidence_pack).keys()),
-        malformed_output_preview=_bounded_preview(raw_output),
+        repair_target_preview=_bounded_preview(output_to_repair),
         repair_input_preview=_bounded_preview(repair_input),
     )
     repair_request = build_research_repair_model_request(
         research_request,
         evidence_pack,
-        raw_output,
+        output_to_repair,
         primary_request=model_request,
         adapter_id=repair_adapter.adapter_id,
     )
@@ -533,7 +546,7 @@ def _attempt_malformed_output_repair(
         )
         return None
     try:
-        repaired_payload = _validate_root_shape_for_progression(repair_response.output_json)
+        repaired_payload = _validate_payload_for_progression(repair_response.output_json)
     except ResearchSynthesisValidationError as exc:
         emit_research_debug_event(
             debug_emitter,
@@ -627,7 +640,7 @@ def _build_primary_synthesis_prompt(
 
 def _repair_system_instructions() -> str:
     return (
-        "Repair malformed research synthesis output into exactly one JSON object that matches json_schema. "
+        "Repair invalid research synthesis output into exactly one JSON object that matches json_schema. "
         "No markdown, no code fences, no commentary. "
         "Do not add claims, sources, evidence, or certainty. "
         "Use only the allowed citation keys in findings.source_refs."
@@ -644,8 +657,8 @@ def _build_repair_prompt(
     compact_schema = json.dumps(json_schema, sort_keys=True, separators=(",", ":"))
     return "\n".join(
         [
-            "TASK: repair malformed research synthesis output",
-            "Reformat only the malformed content into valid JSON.",
+            "TASK: repair invalid research synthesis output",
+            "Reformat only the provided content into valid JSON.",
             "Preserve only content already present.",
             "Do not add claims, evidence, source refs, or certainty.",
             "Output exactly one JSON object matching json_schema.",
@@ -669,18 +682,31 @@ def _compact_section_lines(values: tuple[str, ...], *, prefix: str) -> list[str]
     return [f"{prefix}{index}|{value}" for index, value in enumerate(values, start=1)]
 
 
-def _validate_root_shape_for_progression(payload: Any) -> dict[str, Any]:
+def _validate_payload_for_progression(payload: Any) -> dict[str, Any]:
     try:
         if not isinstance(payload, dict):
             raise ResearchSynthesisValidationError("research payload must be a JSON object")
         _required_string(payload, "summary")
-        _required_list(payload, "findings")
+        findings_payload = _required_list(payload, "findings")
+        if not findings_payload:
+            raise ResearchSynthesisValidationError("findings must contain at least one item")
+        for item in findings_payload:
+            if not isinstance(item, dict):
+                raise ResearchSynthesisValidationError("research finding entries must be objects")
+            _required_string(item, "text")
+            source_refs = _required_string_list(item, "source_refs")
+            if not source_refs:
+                raise ResearchSynthesisValidationError("research synthesis findings must keep at least one source_ref")
         _required_string_list(payload, "inferences")
         _required_string_list(payload, "uncertainties")
         _optional_string(payload.get("recommendation"), field_name="recommendation")
         return payload
     except (TypeError, ValueError) as exc:
         raise ResearchSynthesisValidationError(str(exc)) from exc
+
+
+def _serialize_output_json_for_repair(payload: dict[str, Any]) -> str:
+    return json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
 
 
 def _rewrite_source_identifiers(text: str, source_id_to_citation_key: dict[str, str]) -> str:

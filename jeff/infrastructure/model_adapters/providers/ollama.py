@@ -46,16 +46,8 @@ class OllamaModelAdapter:
 
     def invoke(self, request_model: ModelRequest) -> ModelResponse:
         started = time.monotonic()
-        url = f"{self.base_url.rstrip('/')}/api/generate"
-        payload = {
-            "model": self.model_name,
-            "prompt": request_model.prompt,
-            "stream": False,
-        }
-        if request_model.system_instructions is not None:
-            payload["system"] = request_model.system_instructions
-        if self.context_length is not None:
-            payload["options"] = {"num_ctx": self.context_length}
+        endpoint_path, payload = self._build_request_payload(request_model)
+        url = f"{self.base_url.rstrip('/')}{endpoint_path}"
 
         body = json.dumps(payload).encode("utf-8")
         http_request = request.Request(
@@ -85,13 +77,11 @@ class OllamaModelAdapter:
         except json.JSONDecodeError as exc:
             raise ModelInvocationError(f"ollama returned invalid JSON envelope for adapter {self.adapter_id}") from exc
 
-        output_text = response_payload.get("response")
-        if not isinstance(output_text, str) or not output_text.strip():
-            raise ModelInvocationError(f"ollama response missing text output for adapter {self.adapter_id}")
-        output_text = output_text.strip()
+        response_mode = request_model.response_mode
+        output_text = self._extract_output_text(response_payload, response_mode=response_mode)
 
         output_json = None
-        if request_model.response_mode is ModelResponseMode.JSON:
+        if response_mode is ModelResponseMode.JSON:
             try:
                 parsed = json.loads(output_text)
             except json.JSONDecodeError as exc:
@@ -137,3 +127,56 @@ class OllamaModelAdapter:
             warnings=(),
             raw_response_ref=None,
         )
+
+    def _build_request_payload(self, request_model: ModelRequest) -> tuple[str, dict[str, Any]]:
+        if request_model.response_mode is ModelResponseMode.JSON:
+            return "/api/chat", self._build_chat_payload(request_model)
+        return "/api/generate", self._build_generate_payload(request_model)
+
+    def _build_generate_payload(self, request_model: ModelRequest) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "model": self.model_name,
+            "prompt": request_model.prompt,
+            "stream": False,
+        }
+        if request_model.system_instructions is not None:
+            payload["system"] = request_model.system_instructions
+        if self.context_length is not None:
+            payload["options"] = {"num_ctx": self.context_length}
+        return payload
+
+    def _build_chat_payload(self, request_model: ModelRequest) -> dict[str, Any]:
+        messages: list[dict[str, str]] = []
+        if request_model.system_instructions is not None:
+            messages.append({"role": "system", "content": request_model.system_instructions})
+        messages.append({"role": "user", "content": request_model.prompt})
+
+        payload: dict[str, Any] = {
+            "model": self.model_name,
+            "messages": messages,
+            "stream": False,
+            "format": request_model.json_schema if request_model.json_schema is not None else "json",
+        }
+        if self.context_length is not None:
+            payload["options"] = {"num_ctx": self.context_length}
+        return payload
+
+    def _extract_output_text(
+        self,
+        response_payload: dict[str, Any],
+        *,
+        response_mode: ModelResponseMode,
+    ) -> str:
+        if response_mode is ModelResponseMode.JSON:
+            message = response_payload.get("message")
+            if not isinstance(message, dict):
+                raise ModelInvocationError(f"ollama chat response missing message output for adapter {self.adapter_id}")
+            output_text = message.get("content")
+            if not isinstance(output_text, str) or not output_text.strip():
+                raise ModelInvocationError(f"ollama chat response missing message content for adapter {self.adapter_id}")
+            return output_text.strip()
+
+        output_text = response_payload.get("response")
+        if not isinstance(output_text, str) or not output_text.strip():
+            raise ModelInvocationError(f"ollama response missing text output for adapter {self.adapter_id}")
+        return output_text.strip()

@@ -159,7 +159,38 @@ def test_schema_incomplete_primary_output_fails_at_primary_boundary() -> None:
     checkpoints = [event["checkpoint"] for event in events]
     assert "primary_synthesis_failed" in checkpoints
     assert "primary_synthesis_succeeded" not in checkpoints
+    assert "repair_pass_started" in checkpoints
+    assert "repair_pass_failed" in checkpoints
     assert "citation_remap_started" not in checkpoints
+
+
+def test_schema_incomplete_primary_output_can_succeed_via_one_repair_pass() -> None:
+    adapter = _ScriptedAdapter(
+        script=(
+            {
+                "findings": [{"text": "Observed fact", "source_refs": ["S1"]}],
+                "inferences": [],
+                "uncertainties": [],
+                "recommendation": None,
+            },
+            {
+                "summary": "Repaired summary.",
+                "findings": [{"text": "Observed fact", "source_refs": ["S1"]}],
+                "inferences": [],
+                "uncertainties": [],
+                "recommendation": None,
+            },
+        )
+    )
+
+    artifact = synthesize_research(
+        research_request=_research_request(),
+        evidence_pack=_evidence_pack(),
+        adapter=adapter,
+    )
+
+    assert artifact.summary == "Repaired summary."
+    assert [request.purpose for request in adapter.requests] == ["research_synthesis", "research_synthesis_repair"]
 
 
 def test_generic_invocation_error_remains_bounded_and_truthful() -> None:

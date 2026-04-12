@@ -22,7 +22,7 @@ provider_kind = "ollama"
 provider_name = "ollama"
 model_name = "gemma4:31b-cloud"
 base_url = "http://127.0.0.1:11434"
-timeout_seconds = 300
+timeout_seconds = 120
 
 [adapters.provider_options]
 context_length = 16384

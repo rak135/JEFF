@@ -115,7 +115,7 @@ def test_live_debug_stream_shows_provenance_stage_failure_checkpoint(
     assert "forced provenance failure for debug" in captured.err
 
 
-def test_live_debug_stream_does_not_report_primary_success_for_incomplete_primary_payload(
+def test_live_debug_stream_shows_schema_incomplete_primary_then_repair_success_before_final_result(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -124,6 +124,13 @@ def test_live_debug_stream_does_not_report_primary_success_for_incomplete_primar
         tmp_path,
         script=(
             {
+                "findings": [{"text": "Observed fact", "source_refs": ["S1"]}],
+                "inferences": [],
+                "uncertainties": [],
+                "recommendation": None,
+            },
+            {
+                "summary": "Repaired summary.",
                 "findings": [{"text": "Observed fact", "source_refs": ["S1"]}],
                 "inferences": [],
                 "uncertainties": [],
@@ -148,8 +155,13 @@ def test_live_debug_stream_does_not_report_primary_success_for_incomplete_primar
     assert exit_code == 0
     assert "[debug][research] primary_synthesis_failed" in captured.out
     assert "[debug][research] primary_synthesis_succeeded" not in captured.out
-    assert "[debug][research] citation_remap_started" not in captured.out
-    assert "summary must be a non-empty string" in captured.err
+    assert "failure_class=schema_incomplete" in captured.out
+    assert "[debug][research] repair_pass_started" in captured.out
+    assert "[debug][research] repair_pass_succeeded" in captured.out
+    assert captured.out.index("[debug][research] primary_synthesis_failed") < captured.out.index(
+        "[debug][research] repair_pass_started"
+    )
+    assert captured.out.index("[debug][research] repair_pass_succeeded") < captured.out.index("RESEARCH docs")
 
 
 def test_live_debug_stream_does_not_report_repair_success_for_incomplete_repair_json(
@@ -160,10 +172,12 @@ def test_live_debug_stream_does_not_report_repair_success_for_incomplete_repair_
     cli, document = _build_docs_cli(
         tmp_path,
         script=(
-            ModelMalformedOutputError(
-                "primary malformed",
-                raw_output='summary: repaired summary\nfindings: [{"text":"Observed fact","source_refs":["S1"]}]',
-            ),
+            {
+                "findings": [{"text": "Observed fact", "source_refs": ["S1"]}],
+                "inferences": [],
+                "uncertainties": [],
+                "recommendation": None,
+            },
             {
                 "summary": "   ",
                 "findings": [{"text": "Observed fact", "source_refs": ["S1"]}],
@@ -188,12 +202,59 @@ def test_live_debug_stream_does_not_report_repair_success_for_incomplete_repair_
     captured = capsys.readouterr()
 
     assert exit_code == 0
+    assert "[debug][research] repair_pass_started" in captured.out
     assert "[debug][research] repair_pass_failed" in captured.out
     assert "failure_class=schema_incomplete" in captured.out
     assert "reason=summary must be a non-empty string" in captured.out
     assert "[debug][research] repair_pass_succeeded" not in captured.out
     assert "[debug][research] citation_remap_started" not in captured.out
-    assert "malformed_output" in captured.err
+    assert "summary must be a non-empty string" in captured.err
+
+
+def test_live_debug_stream_shows_schema_incomplete_nested_field_failure_then_repair_success(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    cli, document = _build_docs_cli(
+        tmp_path,
+        script=(
+            {
+                "summary": "Observed summary.",
+                "findings": [{"description": "Observed fact", "source_ref": "S1"}],
+                "inferences": [],
+                "uncertainties": [],
+                "recommendation": None,
+            },
+            {
+                "summary": "Observed summary.",
+                "findings": [{"text": "Observed fact", "source_refs": ["S1"]}],
+                "inferences": [],
+                "uncertainties": [],
+                "recommendation": None,
+            },
+        ),
+    )
+    _install_inputs(
+        monkeypatch,
+        [
+            "/project use project-1",
+            "/work use wu-1",
+            "/mode debug",
+            f'/research docs "What does the bounded plan support?" "{document}"',
+            "quit",
+        ],
+    )
+
+    exit_code = _run_interactive(cli)
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "[debug][research] primary_synthesis_failed" in captured.out
+    assert "failure_class=schema_incomplete" in captured.out
+    assert "[debug][research] repair_pass_started" in captured.out
+    assert "[debug][research] repair_pass_succeeded" in captured.out
+    assert "[debug][research] primary_synthesis_succeeded" not in captured.out
 
 
 def _build_docs_cli(tmp_path: Path, *, script: tuple[object, ...]) -> tuple[JeffCLI, Path]:
