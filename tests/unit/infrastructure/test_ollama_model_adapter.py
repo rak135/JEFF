@@ -100,6 +100,24 @@ def test_ollama_adapter_round_trips_request_id(monkeypatch: pytest.MonkeyPatch) 
     assert response.usage.latency_ms == 30
 
 
+def test_ollama_adapter_maps_configured_context_length_into_provider_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    adapter = OllamaModelAdapter(adapter_id="ollama-g", model_name="llama3.2", context_length=16384)
+    captured_payloads: list[dict[str, object]] = []
+
+    def _capture_urlopen(http_request, **_kwargs):  # type: ignore[no-untyped-def]
+        captured_payloads.append(json.loads(http_request.data.decode("utf-8")))
+        return _FakeHttpResponse({"response": "ok"})
+
+    monkeypatch.setattr(ollama_module.request, "urlopen", _capture_urlopen)
+    _install_monotonic_stub(monkeypatch, start=700.0, end=700.01)
+
+    adapter.invoke(_request(response_mode=ModelResponseMode.TEXT))
+
+    assert captured_payloads[0]["options"] == {"num_ctx": 16384}
+
+
 class _FakeHttpResponse:
     def __init__(self, payload: dict[str, object]) -> None:
         self._payload = json.dumps(payload).encode("utf-8")

@@ -35,6 +35,7 @@ def test_factory_creates_ollama_adapter() -> None:
             model_name="llama3.2",
             base_url="http://localhost:11434",
             timeout_seconds=12,
+            provider_options={"context_length": 8192},
         )
     )
 
@@ -43,6 +44,7 @@ def test_factory_creates_ollama_adapter() -> None:
     assert adapter.model_name == "llama3.2"
     assert adapter.base_url == "http://localhost:11434"
     assert adapter.timeout_seconds == 12
+    assert adapter.context_length == 8192
 
 
 def test_factory_rejects_unsupported_provider_kind() -> None:

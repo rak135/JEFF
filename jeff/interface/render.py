@@ -242,7 +242,7 @@ def render_help() -> str:
             "Research:",
             '- /research docs "<question>" <path1> [<path2> ...] [--handoff-memory]',
             '- /research web "<question>" <query1> [<query2> ...] [--handoff-memory]',
-            "Current startup uses explicit in-memory demo state only.",
+            "Current startup uses explicit in-memory demo state and can load local runtime config for research.",
             "",
             "Commands:",
             "/project list",

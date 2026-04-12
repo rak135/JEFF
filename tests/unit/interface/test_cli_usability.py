@@ -84,7 +84,7 @@ def test_help_text_explains_normal_cli_flow() -> None:
     assert "Plain text like 'hello' is not a supported command." in text
     assert "5. /inspect" in text
     assert "Manual history/debug:" in text
-    assert "Current startup uses explicit in-memory demo state only." in text
+    assert "Current startup uses explicit in-memory demo state and can load local runtime config for research." in text
 
 
 def test_readability_helpers_keep_plain_fallback_and_optional_color() -> None:

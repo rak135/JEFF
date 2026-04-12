@@ -1,5 +1,14 @@
 """Infrastructure-owned replaceable plumbing for Jeff."""
 
+from .config import (
+    AdapterConfig,
+    AdapterRuntimeOptions,
+    JeffRuntimeConfig,
+    PurposeOverrides,
+    ResearchRuntimeConfig,
+    RuntimeDefaults,
+    load_runtime_config,
+)
 from .model_adapters import (
     AdapterRegistry,
     AdapterFactoryConfig,
@@ -21,15 +30,23 @@ from .model_adapters import (
     create_model_adapter,
     telemetry_from_response,
 )
-from .runtime import InfrastructureServices, ModelAdapterRuntimeConfig, build_infrastructure_services
+from .runtime import (
+    InfrastructureServices,
+    ModelAdapterRuntimeConfig,
+    build_infrastructure_services,
+    build_model_adapter_runtime_config,
+)
 
 __all__ = [
+    "AdapterConfig",
     "AdapterRegistry",
     "AdapterFactoryConfig",
     "AdapterProviderKind",
+    "AdapterRuntimeOptions",
     "FakeModelAdapter",
     "ModelAdapter",
     "InfrastructureServices",
+    "JeffRuntimeConfig",
     "ModelAdapterError",
     "ModelAdapterNotFoundError",
     "ModelInvocationError",
@@ -43,7 +60,12 @@ __all__ = [
     "ModelTimeoutError",
     "ModelUsage",
     "OllamaModelAdapter",
+    "PurposeOverrides",
+    "ResearchRuntimeConfig",
+    "RuntimeDefaults",
     "build_infrastructure_services",
+    "build_model_adapter_runtime_config",
     "create_model_adapter",
+    "load_runtime_config",
     "telemetry_from_response",
 ]

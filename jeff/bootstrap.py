@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from jeff.action import GovernedExecutionRequest, normalize_outcome
 from jeff.action.execution import ExecutionResult
-from jeff.cognitive import ProposalOption, ProposalSet, SelectionResult, evaluate_outcome
+from jeff.cognitive import ProposalOption, ProposalSet, ResearchArtifactStore, SelectionResult, evaluate_outcome
 from jeff.contracts import Action
 from jeff.core.schemas import Scope
 from jeff.core.state import GlobalState, bootstrap_global_state
@@ -12,19 +14,26 @@ from jeff.core.transition import TransitionRequest, apply_transition
 from jeff.governance import Approval, CurrentTruthSnapshot, Policy, evaluate_action_entry
 from jeff.infrastructure import (
     InfrastructureServices,
+    JeffRuntimeConfig,
     ModelAdapterRuntimeConfig,
+    build_model_adapter_runtime_config,
     build_infrastructure_services,
+    load_runtime_config,
 )
 from jeff.interface.commands import InterfaceContext
+from jeff.memory import InMemoryMemoryStore
 from jeff.orchestrator.lifecycle import FlowLifecycle
 from jeff.orchestrator.runner import FlowRunResult
 from jeff.orchestrator.trace import OrchestrationEvent
 
+RUNTIME_CONFIG_FILENAME = "jeff.runtime.toml"
+
 
 def build_infrastructure_runtime(
-    config: ModelAdapterRuntimeConfig,
+    config: ModelAdapterRuntimeConfig | JeffRuntimeConfig,
 ) -> InfrastructureServices:
-    return build_infrastructure_services(config)
+    runtime_config = build_model_adapter_runtime_config(config) if isinstance(config, JeffRuntimeConfig) else config
+    return build_infrastructure_services(runtime_config)
 
 
 def build_demo_interface_context() -> InterfaceContext:
@@ -33,6 +42,23 @@ def build_demo_interface_context() -> InterfaceContext:
     return InterfaceContext(
         state=state,
         flow_runs={str(scope.run_id): flow_run},
+    )
+
+
+def build_startup_interface_context(*, base_dir: str | Path | None = None) -> InterfaceContext:
+    context = build_demo_interface_context()
+    runtime_config_entry = load_local_runtime_config(base_dir=base_dir)
+    if runtime_config_entry is None:
+        return context
+
+    config_path, runtime_config = runtime_config_entry
+    return InterfaceContext(
+        state=context.state,
+        flow_runs=context.flow_runs,
+        infrastructure_services=build_infrastructure_runtime(runtime_config),
+        research_artifact_store=ResearchArtifactStore(_resolve_research_artifact_store_root(config_path, runtime_config)),
+        memory_store=InMemoryMemoryStore() if runtime_config.research.enable_memory_handoff else None,
+        research_memory_handoff_enabled=runtime_config.research.enable_memory_handoff,
     )
 
 
@@ -192,12 +218,41 @@ def build_demo_flow_run(scope: Scope) -> FlowRunResult:
     )
 
 
-def run_startup_preflight() -> tuple[str, ...]:
-    context = build_demo_interface_context()
+def load_local_runtime_config(*, base_dir: str | Path | None = None) -> tuple[Path, JeffRuntimeConfig] | None:
+    config_path = runtime_config_path(base_dir=base_dir)
+    if not config_path.exists():
+        return None
+    return config_path, load_runtime_config(config_path)
+
+
+def runtime_config_path(*, base_dir: str | Path | None = None) -> Path:
+    root = Path.cwd() if base_dir is None else Path(base_dir)
+    return root / RUNTIME_CONFIG_FILENAME
+
+
+def run_startup_preflight(*, base_dir: str | Path | None = None) -> tuple[str, ...]:
+    context = build_startup_interface_context(base_dir=base_dir)
+    config_path = runtime_config_path(base_dir=base_dir)
     checks = [
         "package imports resolved",
         "demo interface context bootstrapped",
         f"demo project scope ready: {next(iter(context.state.projects.keys()))}",
         "CLI entry surface is available through jeff.interface.JeffCLI",
     ]
+    if context.infrastructure_services is None:
+        checks.append(f"no local runtime config found at {config_path}; research CLI remains unavailable")
+    else:
+        checks.append(f"local runtime config loaded: {config_path}")
+        checks.append(
+            f"research runtime configured with default adapter {context.infrastructure_services.default_model_adapter_id}"
+        )
+        if context.research_artifact_store is not None:
+            checks.append(f"research artifact store root ready: {context.research_artifact_store.root_dir}")
     return tuple(checks)
+
+
+def _resolve_research_artifact_store_root(config_path: Path, runtime_config: JeffRuntimeConfig) -> Path:
+    configured_root = Path(runtime_config.research.artifact_store_root)
+    if configured_root.is_absolute():
+        return configured_root
+    return config_path.parent / configured_root

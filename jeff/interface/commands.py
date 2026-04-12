@@ -58,6 +58,7 @@ class InterfaceContext:
     infrastructure_services: InfrastructureServices | None = None
     research_artifact_store: ResearchArtifactStore | None = None
     memory_store: InMemoryMemoryStore | None = None
+    research_memory_handoff_enabled: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -814,7 +815,10 @@ def _maybe_handoff_research_record_to_memory(
 
 def _require_research_infrastructure(context: InterfaceContext) -> InfrastructureServices:
     if context.infrastructure_services is None:
-        raise ValueError("research runtime is not configured for this CLI context")
+        raise ValueError(
+            "research runtime is not configured for this CLI context. "
+            "Add jeff.runtime.toml in the startup directory to enable research CLI."
+        )
     return context.infrastructure_services
 
 
@@ -825,6 +829,8 @@ def _require_research_store(context: InterfaceContext) -> ResearchArtifactStore:
 
 
 def _require_memory_store(context: InterfaceContext) -> InMemoryMemoryStore:
+    if not context.research_memory_handoff_enabled:
+        raise ValueError("research memory handoff is disabled by the current runtime config")
     if context.memory_store is None:
         raise ValueError("memory store is not configured for research handoff in this CLI context")
     return context.memory_store
@@ -837,6 +843,7 @@ def _replace_context_state(context: InterfaceContext, state: GlobalState) -> Int
         infrastructure_services=context.infrastructure_services,
         research_artifact_store=context.research_artifact_store,
         memory_store=context.memory_store,
+        research_memory_handoff_enabled=context.research_memory_handoff_enabled,
     )
 
 

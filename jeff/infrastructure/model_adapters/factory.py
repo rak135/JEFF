@@ -24,6 +24,7 @@ class AdapterFactoryConfig:
     provider_name: str | None = None
     base_url: str | None = None
     timeout_seconds: int | None = None
+    provider_options: dict[str, Any] | None = None
     fake_text_response: str | None = None
     fake_json_response: dict[str, Any] | None = None
 
@@ -45,6 +46,18 @@ def create_model_adapter(config: AdapterFactoryConfig) -> ModelAdapter:
             base_url=config.base_url or "http://127.0.0.1:11434",
             timeout_seconds=config.timeout_seconds,
             provider_name=config.provider_name or "ollama",
+            context_length=_coerce_context_length(config.provider_options),
         )
 
     raise ModelAdapterError(f"unsupported adapter provider kind: {config.provider_kind}")
+
+
+def _coerce_context_length(provider_options: dict[str, Any] | None) -> int | None:
+    if not provider_options:
+        return None
+    value = provider_options.get("context_length")
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise ModelAdapterError("provider_options.context_length must be a positive integer when provided")
+    return value

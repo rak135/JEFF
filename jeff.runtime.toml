@@ -1,0 +1,34 @@
+[runtime]
+default_adapter_id = "ollama_default"
+
+[research]
+artifact_store_root = ".jeff_runtime/research_artifacts"
+enable_memory_handoff = true
+
+[[adapters]]
+adapter_id = "ollama_default"
+provider_kind = "ollama"
+provider_name = "ollama"
+model_name = "qwen3:8b"
+base_url = "http://127.0.0.1:11434"
+timeout_seconds = 60
+
+[adapters.provider_options]
+context_length = 8192
+
+[[adapters]]
+adapter_id = "ollama_research"
+provider_kind = "ollama"
+provider_name = "ollama"
+model_name = "qwen3:8b"
+base_url = "http://127.0.0.1:11434"
+timeout_seconds = 90
+
+[adapters.provider_options]
+context_length = 16384
+
+[purpose_overrides]
+research = "ollama_research"
+proposal = "ollama_default"
+planning = "ollama_default"
+evaluation = "ollama_default"

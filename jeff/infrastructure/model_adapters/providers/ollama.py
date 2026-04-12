@@ -36,6 +36,7 @@ class OllamaModelAdapter:
     base_url: str = "http://127.0.0.1:11434"
     timeout_seconds: int | None = None
     provider_name: str = "ollama"
+    context_length: int | None = None
 
     def invoke(self, request_model: ModelRequest) -> ModelResponse:
         started = time.monotonic()
@@ -47,6 +48,8 @@ class OllamaModelAdapter:
         }
         if request_model.system_instructions is not None:
             payload["system"] = request_model.system_instructions
+        if self.context_length is not None:
+            payload["options"] = {"num_ctx": self.context_length}
 
         body = json.dumps(payload).encode("utf-8")
         http_request = request.Request(

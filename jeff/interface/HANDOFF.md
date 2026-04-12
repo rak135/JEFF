@@ -39,9 +39,11 @@
 
 - The stable operator start path is `python -m jeff`.
 - Startup bootstraps an explicit in-memory demo workspace and supports help, bootstrap checks, one-shot commands, and an interactive shell in a real terminal.
+- Startup can now also load an explicit local `jeff.runtime.toml` file and attach research runtime dependencies when present.
 - Session scope is local CLI state, not canonical truth mutation.
 - The CLI now includes `/research docs` and `/research web` as a thin operator surface over the existing research backend.
 - Ad-hoc research is not projectless: when no project scope is selected, the interface anchors the request into the built-in `general_research` project plus a bounded derived work unit and lawful run.
+- When runtime config is absent, non-research CLI surfaces still work and research remains explicitly unavailable rather than silently fabricated.
 
 # Important Invariants
 
@@ -50,6 +52,7 @@
 - Support artifacts are not rendered as canonical truth.
 - CLI projections keep evaluation under Cognitive, execution/outcome under Action, and governance meanings distinct.
 - Research persistence and optional research-to-memory handoff remain owned by backend helpers; the CLI only resolves scope, calls them, and renders results.
+- Runtime config parsing, provider construction, purpose-based adapter selection, and provider options remain owned by Infrastructure; the interface only receives assembled dependencies.
 
 # Active Risks / Unresolved Issues
 

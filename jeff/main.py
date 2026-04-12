@@ -14,7 +14,8 @@ def build_parser() -> argparse.ArgumentParser:
         prog="python -m jeff",
         description=(
             "Start the current Jeff v1 CLI-first backbone. "
-            "This startup path bootstraps an explicit in-memory demo workspace and does not persist state."
+            "This startup path bootstraps an explicit in-memory demo workspace and can load local runtime config "
+            "for research when jeff.runtime.toml is present."
         ),
         epilog=(
             "Examples:\n"
@@ -56,7 +57,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.error("--json requires --command")
 
     try:
-        from jeff.bootstrap import build_demo_interface_context, run_startup_preflight
+        from jeff.bootstrap import build_startup_interface_context, run_startup_preflight
         from jeff.interface import JeffCLI
     except Exception as exc:
         return _print_error(f"startup imports failed: {exc}")
@@ -67,10 +68,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             print("bootstrap checks passed")
             for check in checks:
                 print(f"- {check}")
-            print("- startup path uses explicit in-memory demo state only")
             return 0
 
-        context = build_demo_interface_context()
+        context = build_startup_interface_context()
         cli = JeffCLI(context=context)
 
         if args.command is not None:
@@ -99,7 +99,12 @@ def _run_interactive(cli) -> int:
     use_stderr_color = color_enabled(stream_isatty=sys.stderr.isatty())
 
     print(format_info_text("Jeff v1 interactive shell", use_color=use_stdout_color))
-    print(format_info_text("Startup bootstrapped an explicit in-memory demo workspace with no persistence.", use_color=use_stdout_color))
+    print(
+        format_info_text(
+            "Startup bootstrapped an explicit in-memory demo workspace and loads jeff.runtime.toml when present.",
+            use_color=use_stdout_color,
+        )
+    )
     print(format_hint_text("This shell is command-driven. Use slash commands like /help or /project list.", use_color=use_stdout_color))
     print(format_hint_text("Plain text is not a supported command surface. Type 'exit' or 'quit' to leave.", use_color=use_stdout_color))
 

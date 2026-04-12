@@ -8,12 +8,12 @@
 
 # Current Role in Jeff
 
-- Currently contains Slice A and Slice B model-adapter infrastructure plus Slice C1 runtime assembly: provider-neutral contracts, registry, telemetry normalization, a small adapter factory, a deterministic fake provider, one real Ollama HTTP adapter, and explicit runtime service assembly.
+- Currently contains Slice A and Slice B model-adapter infrastructure plus Slice C1/C1.5 runtime assembly: provider-neutral contracts, registry, telemetry normalization, a small adapter factory, a deterministic fake provider, one real Ollama HTTP adapter, explicit runtime service assembly, and explicit local runtime config loading.
 
 # Boundaries / Non-Ownership
 
 - Does not own proposal, selection, governance, evaluation, orchestration, truth mutation, or interface behavior.
-- Does not define semantic provider selection policy, runtime wiring, global config loading, telemetry persistence, or stage integration yet.
+- Does not define semantic proposal/planning/evaluation behavior, interface semantics, telemetry persistence, or orchestrator stage integration.
 - Raw provider outputs remain support data, not canonical Jeff truth.
 
 # Owned Files / Areas
@@ -32,7 +32,9 @@
 - Slice A foundations exist as a standalone package with a narrow synchronous adapter contract.
 - Slice B now adds normalized invocation telemetry, a minimal explicit factory, and one real Ollama HTTP adapter implemented with the standard library.
 - Slice C1 now adds explicit runtime assembly that builds and holds adapter services through the factory and registry, with an optional bootstrap helper that accepts an explicit runtime config object.
-- No stage integration, CLI integration, orchestration integration, provider routing policy, or environment-driven runtime wiring exists yet.
+- A local `jeff.runtime.toml` file can now be loaded through Infrastructure-owned config models and converted into runtime services plus purpose overrides.
+- Purpose-based adapter lookup now exists in runtime services, with research consuming it downstream while provider/config translation remains here.
+- No environment-driven runtime wiring, CLI-owned provider config, or orchestrator routing policy exists.
 
 # Important Invariants
 
@@ -43,6 +45,7 @@
 - Factory construction stays explicit and does not auto-load environment or global runtime settings.
 - Telemetry remains normalized observability data and does not invent Jeff semantics.
 - Runtime assembly may hold adapter services, but it does not assign semantic meaning or task-specific provider choice.
+- Ollama-specific request shaping such as configured context length remains inside the Ollama provider adapter.
 
 # Active Risks / Unresolved Issues
 

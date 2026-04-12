@@ -153,7 +153,7 @@ def synthesize_research_with_runtime(
     adapter = (
         infrastructure_services.get_model_adapter(adapter_id)
         if adapter_id is not None
-        else infrastructure_services.get_default_model_adapter()
+        else infrastructure_services.get_adapter_for_purpose("research")
     )
     return synthesize_research(research_request=research_request, evidence_pack=evidence_pack, adapter=adapter)
 

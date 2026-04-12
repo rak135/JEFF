@@ -27,7 +27,7 @@ def test_documented_bootstrap_check_command_works() -> None:
 
     assert result.returncode == 0
     assert "bootstrap checks passed" in result.stdout
-    assert "startup path uses explicit in-memory demo state only" in result.stdout
+    assert "demo interface context bootstrapped" in result.stdout
 
 
 def test_documented_show_json_quickstart_command_works() -> None:

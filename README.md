@@ -22,8 +22,9 @@ python -m jeff
 Important current behavior:
 
 - startup bootstraps an explicit in-memory demo workspace
+- startup can also load explicit local runtime config from `jeff.runtime.toml` when present
 - the demo workspace contains one project, one work unit, one run, and one bounded flow trace
-- no persistence, daemon, GUI, or background continuation is started
+- no daemon, GUI, or background continuation is started
 - one-shot mode is available for deterministic smoke and automation-safe checks
 
 ## Quickstart
@@ -99,7 +100,7 @@ python -m pytest -q
 
 ## Current Caveats
 
-- startup currently uses explicit demo bootstrap only; there is no persisted runtime state
+- startup always uses explicit demo truth state; research runtime becomes available only when local `jeff.runtime.toml` is present
 - the canonical semantics still live in `v1_doc/`, not in this README
 
 ## Explicitly Deferred
