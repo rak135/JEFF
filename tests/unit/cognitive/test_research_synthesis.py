@@ -23,18 +23,23 @@ def test_build_research_model_request_includes_bounded_evidence_and_instructions
 
     assert model_request.response_mode.value == "JSON"
     assert model_request.purpose == "research_synthesis"
-    assert "Stay within the provided evidence." in model_request.prompt
-    assert "Do not invent sources" in model_request.prompt
-    assert "Question: What does the prepared evidence support?" in model_request.prompt
-    assert "Allowed citation keys: S1, S2" in model_request.prompt
+    assert "TASK: bounded research synthesis" in model_request.prompt
+    assert "Output exactly one JSON object matching json_schema." in model_request.prompt
+    assert "Do not output markdown, code fences, or extra prose." in model_request.prompt
+    assert "QUESTION: What does the prepared evidence support?" in model_request.prompt
+    assert "ALLOWED_CITATION_KEYS: S1, S2" in model_request.prompt
+    assert "Required JSON shape" not in model_request.prompt
     assert "source-a" not in model_request.prompt
     assert "source-b" not in model_request.prompt
-    assert "refs=S1" in model_request.prompt
-    assert "Constraint A" in model_request.prompt
+    assert "E1|refs=S1|text=The current state is stable." in model_request.prompt
+    assert "C1|Constraint A" in model_request.prompt
+    assert "S1|document|Bounded Note A|doc://a|n/a|Source A says the current state is stable." in model_request.prompt
     assert model_request.json_schema["properties"]["findings"]["items"]["properties"]["source_refs"]["items"]["enum"] == [
         "S1",
         "S2",
     ]
+    assert "Return exactly one JSON object that matches json_schema." in model_request.system_instructions
+    assert "No markdown, no code fences, no commentary." in model_request.system_instructions
     assert model_request.metadata["citation_keys"] == ["S1", "S2"]
     assert model_request.metadata["adapter_id"] == "fake-json"
 
@@ -90,6 +95,60 @@ def test_missing_required_fields_fail_closed() -> None:
                 },
             ),
         )
+
+
+def test_primary_output_missing_summary_is_not_treated_as_success() -> None:
+    events: list[dict[str, object]] = []
+
+    with pytest.raises(ResearchSynthesisValidationError, match="summary must be a non-empty string"):
+        synthesize_research(
+            research_request=_research_request(),
+            evidence_pack=_evidence_pack(),
+            adapter=FakeModelAdapter(
+                adapter_id="fake-json",
+                default_json_response={
+                    "findings": [{"text": "Observed fact", "source_refs": ["S1"]}],
+                    "inferences": [],
+                    "uncertainties": [],
+                    "recommendation": None,
+                },
+            ),
+            debug_emitter=events.append,
+        )
+
+    checkpoints = [event["checkpoint"] for event in events]
+    assert "primary_synthesis_failed" in checkpoints
+    assert "primary_synthesis_succeeded" not in checkpoints
+    assert "citation_remap_started" not in checkpoints
+    failure_event = next(event for event in events if event["checkpoint"] == "primary_synthesis_failed")
+    assert failure_event["payload"]["failure_class"] == "schema_incomplete"
+    assert "summary must be a non-empty string" in str(failure_event["payload"]["reason"])
+
+
+def test_primary_synthesis_succeeded_is_emitted_only_after_root_shape_gate_passes() -> None:
+    events: list[dict[str, object]] = []
+
+    artifact = synthesize_research(
+        research_request=_research_request(),
+        evidence_pack=_evidence_pack(),
+        adapter=FakeModelAdapter(
+            adapter_id="fake-json",
+            default_json_response={
+                "summary": "Artifact only.",
+                "findings": [{"text": "Observed fact", "source_refs": ["S1"]}],
+                "inferences": [],
+                "uncertainties": [],
+                "recommendation": None,
+            },
+        ),
+        debug_emitter=events.append,
+    )
+
+    assert artifact.summary == "Artifact only."
+    checkpoints = [event["checkpoint"] for event in events]
+    assert "primary_synthesis_succeeded" in checkpoints
+    assert "citation_remap_started" in checkpoints
+    assert checkpoints.index("primary_synthesis_succeeded") < checkpoints.index("citation_remap_started")
 
 
 def test_unknown_citation_refs_in_returned_findings_fail_closed() -> None:

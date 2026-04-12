@@ -36,9 +36,9 @@ def test_model_facing_sources_use_request_local_citation_keys() -> None:
 def test_model_request_uses_citation_keys_without_leaking_raw_source_ids() -> None:
     request = build_research_model_request(_research_request(), _evidence_pack(), adapter_id="fake-json")
 
-    assert "Allowed citation keys: S1, S2" in request.prompt
-    assert "refs=S1" in request.prompt
-    assert "refs=S2" in request.prompt
+    assert "ALLOWED_CITATION_KEYS: S1, S2" in request.prompt
+    assert "E1|refs=S1|text=The bounded rollout remains stable." in request.prompt
+    assert "E2|refs=S2|text=The local plan keeps scope narrow." in request.prompt
     assert "web-359eb9e7c0c0" not in request.prompt
     assert "document-a81f1c0a" not in request.prompt
     assert "web-359eb9e7c0c0" not in json.dumps(request.json_schema)

@@ -115,6 +115,87 @@ def test_live_debug_stream_shows_provenance_stage_failure_checkpoint(
     assert "forced provenance failure for debug" in captured.err
 
 
+def test_live_debug_stream_does_not_report_primary_success_for_incomplete_primary_payload(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    cli, document = _build_docs_cli(
+        tmp_path,
+        script=(
+            {
+                "findings": [{"text": "Observed fact", "source_refs": ["S1"]}],
+                "inferences": [],
+                "uncertainties": [],
+                "recommendation": None,
+            },
+        ),
+    )
+    _install_inputs(
+        monkeypatch,
+        [
+            "/project use project-1",
+            "/work use wu-1",
+            "/mode debug",
+            f'/research docs "What does the bounded plan support?" "{document}"',
+            "quit",
+        ],
+    )
+
+    exit_code = _run_interactive(cli)
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "[debug][research] primary_synthesis_failed" in captured.out
+    assert "[debug][research] primary_synthesis_succeeded" not in captured.out
+    assert "[debug][research] citation_remap_started" not in captured.out
+    assert "summary must be a non-empty string" in captured.err
+
+
+def test_live_debug_stream_does_not_report_repair_success_for_incomplete_repair_json(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    cli, document = _build_docs_cli(
+        tmp_path,
+        script=(
+            ModelMalformedOutputError(
+                "primary malformed",
+                raw_output='summary: repaired summary\nfindings: [{"text":"Observed fact","source_refs":["S1"]}]',
+            ),
+            {
+                "summary": "   ",
+                "findings": [{"text": "Observed fact", "source_refs": ["S1"]}],
+                "inferences": [],
+                "uncertainties": [],
+                "recommendation": None,
+            },
+        ),
+    )
+    _install_inputs(
+        monkeypatch,
+        [
+            "/project use project-1",
+            "/work use wu-1",
+            "/mode debug",
+            f'/research docs "What does the bounded plan support?" "{document}"',
+            "quit",
+        ],
+    )
+
+    exit_code = _run_interactive(cli)
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "[debug][research] repair_pass_failed" in captured.out
+    assert "failure_class=schema_incomplete" in captured.out
+    assert "reason=summary must be a non-empty string" in captured.out
+    assert "[debug][research] repair_pass_succeeded" not in captured.out
+    assert "[debug][research] citation_remap_started" not in captured.out
+    assert "malformed_output" in captured.err
+
+
 def _build_docs_cli(tmp_path: Path, *, script: tuple[object, ...]) -> tuple[JeffCLI, Path]:
     tmp_path.mkdir(parents=True, exist_ok=True)
     document = tmp_path / "plan.md"

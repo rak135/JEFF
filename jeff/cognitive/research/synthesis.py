@@ -49,55 +49,13 @@ def build_research_model_request(
     source_id_to_citation_key = {source_id: citation_key for citation_key, source_id in citation_key_map.items()}
     allowed_citation_keys = tuple(citation_key_map.keys())
     model_facing_sources = build_model_facing_sources(evidence_pack, citation_key_map)
-
-    source_lines = [
-        (
-            f"- {source.citation_key} | type={source.source_type}"
-            f" | title={source.title or 'n/a'}"
-            f" | locator={source.locator or 'n/a'}"
-            f" | published_at={source.published_at or 'n/a'}"
-            f" | snippet={source.snippet or 'n/a'}"
-        )
-        for source in model_facing_sources
-    ]
-    evidence_lines = [
-        f"- refs={', '.join(source_id_to_citation_key[source_ref] for source_ref in item.source_refs)} | text={item.text}"
-        for item in evidence_pack.evidence_items
-    ]
-    contradiction_lines = [
-        f"- {_rewrite_source_identifiers(item, source_id_to_citation_key)}"
-        for item in evidence_pack.contradictions
-    ] or ["- none"]
-    uncertainty_lines = [f"- {item}" for item in evidence_pack.uncertainties] or ["- none"]
-    constraint_lines = [f"- {item}" for item in (request.constraints or evidence_pack.constraints)] or ["- none"]
-    allowed_citation_line = ", ".join(allowed_citation_keys)
-
-    prompt = "\n".join(
-        [
-            "You are performing bounded research synthesis from prepared evidence only.",
-            "Stay within the provided evidence.",
-            "Do not invent sources, provenance, facts, or unstated certainty.",
-            "Keep findings separate from inferences.",
-            "Keep uncertainty explicit.",
-            "Use only the provided citation keys in findings.source_refs.",
-            "Return JSON only and follow the required schema exactly.",
-            "",
-            f"Question: {request.question}",
-            "Constraints:",
-            *constraint_lines,
-            f"Allowed citation keys: {allowed_citation_line}",
-            "Sources:",
-            *source_lines,
-            "Evidence Items:",
-            *evidence_lines,
-            "Contradictions:",
-            *contradiction_lines,
-            "Uncertainties:",
-            *uncertainty_lines,
-            "",
-            "Required JSON shape:",
-            '{"summary":"string","findings":[{"text":"string","source_refs":["S1"]}],"inferences":["string"],"uncertainties":["string"],"recommendation":"string or null"}',
-        ]
+    json_schema = _build_research_synthesis_schema(allowed_citation_keys)
+    prompt = _build_primary_synthesis_prompt(
+        request=request,
+        evidence_pack=evidence_pack,
+        model_facing_sources=model_facing_sources,
+        source_id_to_citation_key=source_id_to_citation_key,
+        allowed_citation_keys=allowed_citation_keys,
     )
 
     return ModelRequest(
@@ -107,14 +65,9 @@ def build_research_model_request(
         run_id=request.run_id,
         purpose="research_synthesis",
         prompt=prompt,
-        system_instructions=(
-            "Synthesize only from provided evidence. "
-            "Never claim unseen sources. "
-            "Keep findings, inferences, and uncertainties distinct. "
-            "Use only the request-local citation keys in findings.source_refs."
-        ),
+        system_instructions=_primary_synthesis_system_instructions(),
         response_mode=ModelResponseMode.JSON,
-        json_schema=_build_research_synthesis_schema(allowed_citation_keys),
+        json_schema=json_schema,
         timeout_seconds=None,
         max_output_tokens=1200,
         reasoning_effort="medium",
@@ -350,6 +303,20 @@ def _invoke_synthesis_payload_with_optional_repair(
 
     if response.output_json is None:
         raise ResearchSynthesisValidationError("research synthesis requires JSON output")
+    try:
+        validated_payload = _validate_root_shape_for_progression(response.output_json)
+    except ResearchSynthesisValidationError as exc:
+        emit_research_debug_event(
+            debug_emitter,
+            "primary_synthesis_failed",
+            failure_class="schema_incomplete",
+            adapter_id=adapter.adapter_id,
+            provider_name=getattr(adapter, "provider_name", None),
+            model_name=getattr(adapter, "model_name", None),
+            reason=_bounded_debug_text(str(exc)),
+            raw_output_preview=_response_output_preview(response),
+        )
+        raise
     emit_research_debug_event(
         debug_emitter,
         "primary_synthesis_succeeded",
@@ -358,7 +325,7 @@ def _invoke_synthesis_payload_with_optional_repair(
         model_name=getattr(adapter, "model_name", None),
         raw_output_preview=_response_output_preview(response),
     )
-    return response.output_json
+    return validated_payload
 
 
 def _required_string(payload: dict[str, Any], field_name: str) -> str:
@@ -465,23 +432,11 @@ def build_research_repair_model_request(
     citation_key_map = build_citation_key_map(evidence_pack)
     allowed_citation_keys = tuple(citation_key_map.keys())
     sanitized_output = _sanitize_repair_input(malformed_output, citation_key_map)
-    prompt = "\n".join(
-        [
-            "You are repairing malformed research synthesis output.",
-            "Convert the malformed content into valid JSON matching the exact schema.",
-            "Do not add prose.",
-            "Do not add new claims, source refs, evidence, or certainty.",
-            "Preserve only content already present in the malformed content.",
-            "Use only the allowed citation keys in findings.source_refs.",
-            "",
-            f"Question: {request.question}",
-            f"Allowed citation keys: {', '.join(allowed_citation_keys)}",
-            "Exact JSON schema:",
-            json.dumps(primary_request.json_schema, sort_keys=True),
-            "",
-            "Malformed content to repair:",
-            sanitized_output,
-        ]
+    prompt = _build_repair_prompt(
+        request=request,
+        allowed_citation_keys=allowed_citation_keys,
+        json_schema=primary_request.json_schema,
+        sanitized_output=sanitized_output,
     )
 
     return ModelRequest(
@@ -491,11 +446,7 @@ def build_research_repair_model_request(
         run_id=request.run_id,
         purpose="research_synthesis_repair",
         prompt=prompt,
-        system_instructions=(
-            "Repair malformed research synthesis output into valid JSON only. "
-            "Do not add new reasoning or claims. "
-            "Use only the request-local citation keys in findings.source_refs."
-        ),
+        system_instructions=_repair_system_instructions(),
         response_mode=ModelResponseMode.JSON,
         json_schema=primary_request.json_schema,
         timeout_seconds=primary_request.timeout_seconds,
@@ -581,6 +532,20 @@ def _attempt_malformed_output_repair(
             reason="repair pass returned no JSON output",
         )
         return None
+    try:
+        repaired_payload = _validate_root_shape_for_progression(repair_response.output_json)
+    except ResearchSynthesisValidationError as exc:
+        emit_research_debug_event(
+            debug_emitter,
+            "repair_pass_failed",
+            failure_class="schema_incomplete",
+            adapter_id=repair_adapter.adapter_id,
+            provider_name=getattr(repair_adapter, "provider_name", None),
+            model_name=getattr(repair_adapter, "model_name", None),
+            reason=_bounded_debug_text(str(exc)),
+            raw_output_preview=_response_output_preview(repair_response),
+        )
+        return None
     emit_research_debug_event(
         debug_emitter,
         "repair_pass_succeeded",
@@ -589,7 +554,133 @@ def _attempt_malformed_output_repair(
         model_name=getattr(repair_adapter, "model_name", None),
         raw_output_preview=_response_output_preview(repair_response),
     )
-    return repair_response.output_json
+    return repaired_payload
+
+
+def _primary_synthesis_system_instructions() -> str:
+    return (
+        "Use only the provided evidence. "
+        "Return exactly one JSON object that matches json_schema. "
+        "No markdown, no code fences, no commentary. "
+        "Do not invent facts, sources, or certainty. "
+        "Use only the allowed citation keys in findings.source_refs."
+    )
+
+
+def _build_primary_synthesis_prompt(
+    *,
+    request: ResearchRequest,
+    evidence_pack: EvidencePack,
+    model_facing_sources: tuple[ModelFacingSource, ...],
+    source_id_to_citation_key: dict[str, str],
+    allowed_citation_keys: tuple[str, ...],
+) -> str:
+    constraint_lines = _compact_section_lines(request.constraints or evidence_pack.constraints, prefix="C")
+    contradiction_lines = _compact_section_lines(
+        tuple(_rewrite_source_identifiers(item, source_id_to_citation_key) for item in evidence_pack.contradictions),
+        prefix="X",
+    )
+    uncertainty_lines = _compact_section_lines(evidence_pack.uncertainties, prefix="U")
+    source_lines = [
+        "|".join(
+            [
+                source.citation_key,
+                source.source_type or "n/a",
+                source.title or "n/a",
+                source.locator or "n/a",
+                source.published_at or "n/a",
+                source.snippet or "n/a",
+            ]
+        )
+        for source in model_facing_sources
+    ] or ["none"]
+    evidence_lines = [
+        (
+            f"E{index}|refs={','.join(source_id_to_citation_key[source_ref] for source_ref in item.source_refs)}"
+            f"|text={item.text}"
+        )
+        for index, item in enumerate(evidence_pack.evidence_items, start=1)
+    ] or ["none"]
+
+    return "\n".join(
+        [
+            "TASK: bounded research synthesis",
+            "Output exactly one JSON object matching json_schema.",
+            "Use only provided evidence and allowed citation keys.",
+            "Keep findings, inferences, and uncertainties distinct.",
+            "Do not output markdown, code fences, or extra prose.",
+            f"QUESTION: {request.question}",
+            f"ALLOWED_CITATION_KEYS: {', '.join(allowed_citation_keys)}",
+            "CONSTRAINTS:",
+            *constraint_lines,
+            "SOURCES:",
+            *source_lines,
+            "EVIDENCE:",
+            *evidence_lines,
+            "CONTRADICTIONS:",
+            *contradiction_lines,
+            "UNCERTAINTIES:",
+            *uncertainty_lines,
+        ]
+    )
+
+
+def _repair_system_instructions() -> str:
+    return (
+        "Repair malformed research synthesis output into exactly one JSON object that matches json_schema. "
+        "No markdown, no code fences, no commentary. "
+        "Do not add claims, sources, evidence, or certainty. "
+        "Use only the allowed citation keys in findings.source_refs."
+    )
+
+
+def _build_repair_prompt(
+    *,
+    request: ResearchRequest,
+    allowed_citation_keys: tuple[str, ...],
+    json_schema: dict[str, Any],
+    sanitized_output: str,
+) -> str:
+    compact_schema = json.dumps(json_schema, sort_keys=True, separators=(",", ":"))
+    return "\n".join(
+        [
+            "TASK: repair malformed research synthesis output",
+            "Reformat only the malformed content into valid JSON.",
+            "Preserve only content already present.",
+            "Do not add claims, evidence, source refs, or certainty.",
+            "Output exactly one JSON object matching json_schema.",
+            "Do not output markdown, code fences, or extra prose.",
+            "findings must be a JSON array.",
+            "Each findings item must be a JSON object with text and source_refs.",
+            "finding.source_refs must be a JSON array of strings using only allowed citation keys.",
+            'Even one citation must be ["S1"], never "S1".',
+            f"QUESTION: {request.question}",
+            f"ALLOWED_CITATION_KEYS: {', '.join(allowed_citation_keys)}",
+            f"JSON_SCHEMA: {compact_schema}",
+            "MALFORMED_CONTENT:",
+            sanitized_output,
+        ]
+    )
+
+
+def _compact_section_lines(values: tuple[str, ...], *, prefix: str) -> list[str]:
+    if not values:
+        return ["none"]
+    return [f"{prefix}{index}|{value}" for index, value in enumerate(values, start=1)]
+
+
+def _validate_root_shape_for_progression(payload: Any) -> dict[str, Any]:
+    try:
+        if not isinstance(payload, dict):
+            raise ResearchSynthesisValidationError("research payload must be a JSON object")
+        _required_string(payload, "summary")
+        _required_list(payload, "findings")
+        _required_string_list(payload, "inferences")
+        _required_string_list(payload, "uncertainties")
+        _optional_string(payload.get("recommendation"), field_name="recommendation")
+        return payload
+    except (TypeError, ValueError) as exc:
+        raise ResearchSynthesisValidationError(str(exc)) from exc
 
 
 def _rewrite_source_identifiers(text: str, source_id_to_citation_key: dict[str, str]) -> str:

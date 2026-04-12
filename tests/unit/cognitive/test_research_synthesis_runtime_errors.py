@@ -9,6 +9,7 @@ from jeff.cognitive import (
     ResearchRequest,
     ResearchArtifact,
     ResearchSynthesisRuntimeError,
+    ResearchSynthesisValidationError,
     SourceItem,
     build_research_model_request,
     synthesize_research,
@@ -108,6 +109,57 @@ def test_failed_repair_keeps_malformed_output_classification() -> None:
 
     assert exc_info.value.failure_class == "malformed_output"
     assert len(adapter.requests) == 2
+
+
+def test_schema_incomplete_repair_output_still_fails_closed_as_malformed_output() -> None:
+    adapter = _ScriptedAdapter(
+        script=(
+            ModelMalformedOutputError("primary malformed", raw_output="summary: bad"),
+            {
+                "findings": [{"text": "Observed fact", "source_refs": ["S1"]}],
+                "inferences": [],
+                "uncertainties": [],
+                "recommendation": None,
+            },
+        )
+    )
+
+    with pytest.raises(ResearchSynthesisRuntimeError) as exc_info:
+        synthesize_research(
+            research_request=_research_request(),
+            evidence_pack=_evidence_pack(),
+            adapter=adapter,
+        )
+
+    assert exc_info.value.failure_class == "malformed_output"
+    assert len(adapter.requests) == 2
+
+
+def test_schema_incomplete_primary_output_fails_at_primary_boundary() -> None:
+    events: list[dict[str, object]] = []
+
+    with pytest.raises(ResearchSynthesisValidationError, match="summary must be a non-empty string"):
+        synthesize_research(
+            research_request=_research_request(),
+            evidence_pack=_evidence_pack(),
+            adapter=FakeModelAdapter(
+                adapter_id="research-schema-incomplete",
+                provider_name="fake",
+                model_name="research-model",
+                default_json_response={
+                    "findings": [{"text": "Observed fact", "source_refs": ["S1"]}],
+                    "inferences": [],
+                    "uncertainties": [],
+                    "recommendation": None,
+                },
+            ),
+            debug_emitter=events.append,
+        )
+
+    checkpoints = [event["checkpoint"] for event in events]
+    assert "primary_synthesis_failed" in checkpoints
+    assert "primary_synthesis_succeeded" not in checkpoints
+    assert "citation_remap_started" not in checkpoints
 
 
 def test_generic_invocation_error_remains_bounded_and_truthful() -> None:
