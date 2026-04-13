@@ -687,7 +687,7 @@
 
 
 
-# 2026-04-12 15:30 Pre-Phase-02 Research Refactor: COMPLETE
+## 2026-04-12 15:30 Pre-Phase-02 Research Refactor: COMPLETE
 
 ## Summary
 
@@ -792,3 +792,106 @@ Full details available in:
 The research subsystem is now cleanly structured for Phase 02 work. All three refactors are complete, all tests pass, and the architecture supports the planned improvements without requiring rewrites.
 
 Next steps: Phase 02 implementation can begin (SearXNG, Trafilatura, etc.) using the new discovery/extraction boundaries.  
+
+## 2026-04-12 17:06 â€” Hardened research synthesis and repair prompts
+
+- Scope: research synthesis prompt contract and malformed-output repair prompt
+- Done:
+  - simplified the primary synthesis prompt into a shorter structured JSON-only contract
+  - removed the handwritten required-JSON-shape block and kept `json_schema` as the authoritative schema path
+  - hardened system instructions and prompt wording against markdown, code fences, and extra prose
+  - tightened repair prompt typing rules for `findings` and `finding.source_refs`
+  - updated deterministic unit coverage for the new prompt contract
+- Validation: targeted synthesis/repair prompt tests passed; full `pytest -q` passed
+- Current state: research synthesis and repair prompts are shorter, stricter, citation-key safe, and still preserve the existing artifact semantics
+- Next step: use live runtime results to judge whether additional bounded prompt cleanup is needed before any broader research-runtime changes
+- Files:
+  - jeff/cognitive/research/synthesis.py
+  - tests/unit/cognitive/test_research_synthesis.py
+  - tests/unit/cognitive/test_research_synthesis_repair_pass.py
+  - tests/unit/cognitive/test_research_synthesis_citation_keys.py
+
+  ## 2026-04-12 17:19 â€” Hardened research repair success boundary
+
+- Scope: research malformed-output repair boundary and debug truthfulness
+- Done:
+  - added a root-shape gate for repaired JSON before `repair_pass_succeeded` is emitted
+  - made schema-incomplete repaired JSON fail at the repair boundary instead of later artifact construction
+  - updated debug flow so incomplete repair output emits `repair_pass_failed` with a bounded reason
+  - added unit and integration coverage for missing root fields, wrong root types, and CLI debug behavior
+- Validation: targeted repair-boundary tests passed; full `pytest -q` passed
+- Current state: repair success now means the repaired JSON is schema-complete enough to proceed into artifact construction, while successful valid repair flows remain unchanged
+- Next step: continue using live debug checkpoints to tighten any remaining misleading success boundaries without widening research semantics
+- Files:
+  - jeff/cognitive/research/synthesis.py
+  - tests/unit/cognitive/test_research_synthesis_repair_pass.py
+  - tests/unit/cognitive/test_research_synthesis_runtime_errors.py
+  - tests/integration/test_research_synthesis_repair_flow.py
+
+## 2026-04-12 17:33 â€” Unified research schema-completeness boundary
+
+- Scope: research synthesis and repair success-boundary truthfulness
+- Done:
+  - replaced the repair-only root-shape check with one shared schema-completeness gate for progression
+  - made primary synthesis emit `primary_synthesis_failed` instead of false success for schema-incomplete JSON
+  - kept repair pass fail-closed and made `repair_pass_succeeded` depend on the same shared gate
+  - added unit and integration coverage to ensure schema-incomplete payloads stop before citation remap and debug output stays truthful
+- Validation: targeted synthesis-boundary tests passed; full `pytest -q` passed
+- Current state: both primary and repair branches now require schema-complete research payloads before success is reported or citation remap begins
+- Next step: continue tightening only misleading success boundaries while preserving existing research semantics and downstream validation
+- Files:
+  - jeff/cognitive/research/synthesis.py
+  - tests/unit/cognitive/test_research_synthesis.py
+  - tests/unit/cognitive/test_research_synthesis_runtime_errors.py
+  - tests/integration/test_research_synthesis_repair_flow.py
+
+## 2026-04-12 17:47 â€” Fixed repair-branch schema-incomplete debug surfacing
+
+- Scope: research repair-branch debug truthfulness at the shared schema-completeness boundary
+- Done:
+  - normalized blank/invalid root-field gate failures into `ResearchSynthesisValidationError` inside the shared progression helper
+  - ensured schema-incomplete repair payloads emit `repair_pass_failed` with `failure_class=schema_incomplete`
+  - added deterministic coverage for blank-summary repair output and live CLI debug surfacing
+- Validation: targeted repair/debug tests passed; full `pytest -q` passed
+- Current state: schema-incomplete repair output now shows a truthful repair failure checkpoint with bounded reason before the final fail-closed error
+- Next step: continue only small truthfulness fixes where live debug and final failure still diverge
+- Files:
+  - jeff/cognitive/research/synthesis.py
+  - tests/unit/cognitive/test_research_synthesis_repair_pass.py
+  - tests/integration/test_cli_research_debug_stream.py
+
+## 2026-04-12 18:25 — Wired Ollama structured JSON requests
+
+- Scope: infrastructure Ollama adapter JSON-mode request path
+- Done:
+  - switched Ollama JSON-mode requests from `/api/generate` prompt text to `/api/chat` messages
+  - wired `ModelRequest.json_schema` through to Ollama `format` for structured outputs
+  - kept non-JSON requests on the existing generate path
+  - added unit and integration assertions for outgoing JSON payload shape, endpoint, and absence of an explicit `think` flag
+- Validation: `pytest -q` passed (`366 passed`)
+- Current state: Ollama JSON-mode requests now send real structured-output fields on the wire and the repo tests prove the payload shape
+- Next step: address the next synthesis-boundary fix without changing research semantics yet
+- Files:
+  - jeff/infrastructure/model_adapters/providers/ollama.py
+  - tests/unit/infrastructure/test_ollama_model_adapter.py
+  - tests/integration/test_cli_research_runtime_config.py
+  - tests/integration/test_cli_research_synthesis_runtime_errors.py
+
+## 2026-04-12 18:48 — Extended bounded repair to schema-incomplete primary JSON
+
+- Scope: research synthesis repair trigger and shared schema-completeness boundary
+- Done:
+  - extended the single repair pass to run for primary `schema_incomplete` JSON as well as `malformed_output`
+  - reused the existing repair request path by serializing near-miss primary JSON into the same repair prompt flow
+  - tightened the shared progression validator to catch nested finding field/type mismatches before any false success checkpoint
+  - updated unit and integration tests for repair triggering, debug sequencing, and unchanged malformed-output behavior
+- Validation: `pytest -q` passed (`374 passed`)
+- Current state: primary near-miss JSON now gets one bounded normalization repair attempt with truthful debug checkpoints and no extra retries
+- Next step: move to the next smallest synthesis-boundary fix without widening research semantics
+- Files:
+  - jeff/cognitive/research/synthesis.py
+  - tests/unit/cognitive/test_research_synthesis.py
+  - tests/unit/cognitive/test_research_synthesis_repair_pass.py
+  - tests/unit/cognitive/test_research_synthesis_runtime_errors.py
+  - tests/integration/test_research_synthesis_repair_flow.py
+  - tests/integration/test_cli_research_debug_stream.py
