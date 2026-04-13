@@ -1,13 +1,12 @@
 from dataclasses import dataclass, field
-from typing import Any
 
 import pytest
 
 from jeff.cognitive import (
     EvidenceItem,
     EvidencePack,
-    ResearchRequest,
     ResearchArtifact,
+    ResearchRequest,
     ResearchSynthesisRuntimeError,
     ResearchSynthesisValidationError,
     SourceItem,
@@ -64,133 +63,28 @@ def test_malformed_output_is_surfaced_distinctly_from_timeout() -> None:
     assert exc_info.value.failure_class == "malformed_output"
 
 
-def test_malformed_output_can_succeed_via_one_repair_pass() -> None:
-    adapter = _ScriptedAdapter(
-        script=(
-            ModelMalformedOutputError(
-                "adapter returned malformed output",
-                raw_output='summary: repaired summary\nfindings: [{"text":"Observed fact","source_refs":["S1"]}]',
-            ),
-            {
-                "summary": "Repaired summary.",
-                "findings": [{"text": "Observed fact", "source_refs": ["S1"]}],
-                "inferences": [],
-                "uncertainties": [],
-                "recommendation": None,
-            },
-        )
-    )
-
-    artifact = synthesize_research(
-        research_request=_research_request(),
-        evidence_pack=_evidence_pack(),
-        adapter=adapter,
-    )
-
-    assert isinstance(artifact, ResearchArtifact)
-    assert artifact.findings[0].source_refs == ("source-a",)
-    assert [request.purpose for request in adapter.requests] == ["research_synthesis", "research_synthesis_repair"]
-
-
-def test_failed_repair_keeps_malformed_output_classification() -> None:
-    adapter = _ScriptedAdapter(
-        script=(
-            ModelMalformedOutputError("primary malformed", raw_output="summary: bad"),
-            ModelMalformedOutputError("repair malformed", raw_output="still bad"),
-        )
-    )
-
-    with pytest.raises(ResearchSynthesisRuntimeError) as exc_info:
-        synthesize_research(
-            research_request=_research_request(),
-            evidence_pack=_evidence_pack(),
-            adapter=adapter,
-        )
-
-    assert exc_info.value.failure_class == "malformed_output"
-    assert len(adapter.requests) == 2
-
-
-def test_schema_incomplete_repair_output_still_fails_closed_as_malformed_output() -> None:
-    adapter = _ScriptedAdapter(
-        script=(
-            ModelMalformedOutputError("primary malformed", raw_output="summary: bad"),
-            {
-                "findings": [{"text": "Observed fact", "source_refs": ["S1"]}],
-                "inferences": [],
-                "uncertainties": [],
-                "recommendation": None,
-            },
-        )
-    )
-
-    with pytest.raises(ResearchSynthesisRuntimeError) as exc_info:
-        synthesize_research(
-            research_request=_research_request(),
-            evidence_pack=_evidence_pack(),
-            adapter=adapter,
-        )
-
-    assert exc_info.value.failure_class == "malformed_output"
-    assert len(adapter.requests) == 2
-
-
-def test_schema_incomplete_primary_output_fails_at_primary_boundary() -> None:
+def test_invalid_bounded_text_fails_at_syntax_boundary_without_repair() -> None:
     events: list[dict[str, object]] = []
+    adapter = _ScriptedAdapter(
+        script=(
+            _invalid_bounded_text_missing_summary(),
+        )
+    )
 
     with pytest.raises(ResearchSynthesisValidationError, match="summary must be a non-empty string"):
         synthesize_research(
             research_request=_research_request(),
             evidence_pack=_evidence_pack(),
-            adapter=FakeModelAdapter(
-                adapter_id="research-schema-incomplete",
-                provider_name="fake",
-                model_name="research-model",
-                default_json_response={
-                    "findings": [{"text": "Observed fact", "source_refs": ["S1"]}],
-                    "inferences": [],
-                    "uncertainties": [],
-                    "recommendation": None,
-                },
-            ),
+            adapter=adapter,
             debug_emitter=events.append,
         )
 
     checkpoints = [event["checkpoint"] for event in events]
-    assert "primary_synthesis_failed" in checkpoints
-    assert "primary_synthesis_succeeded" not in checkpoints
-    assert "repair_pass_started" in checkpoints
-    assert "repair_pass_failed" in checkpoints
-    assert "citation_remap_started" not in checkpoints
-
-
-def test_schema_incomplete_primary_output_can_succeed_via_one_repair_pass() -> None:
-    adapter = _ScriptedAdapter(
-        script=(
-            {
-                "findings": [{"text": "Observed fact", "source_refs": ["S1"]}],
-                "inferences": [],
-                "uncertainties": [],
-                "recommendation": None,
-            },
-            {
-                "summary": "Repaired summary.",
-                "findings": [{"text": "Observed fact", "source_refs": ["S1"]}],
-                "inferences": [],
-                "uncertainties": [],
-                "recommendation": None,
-            },
-        )
-    )
-
-    artifact = synthesize_research(
-        research_request=_research_request(),
-        evidence_pack=_evidence_pack(),
-        adapter=adapter,
-    )
-
-    assert artifact.summary == "Repaired summary."
-    assert [request.purpose for request in adapter.requests] == ["research_synthesis", "research_synthesis_repair"]
+    assert "content_generation_started" in checkpoints
+    assert "content_generation_succeeded" in checkpoints
+    assert "syntax_precheck_failed" in checkpoints
+    assert "repair_pass_started" not in checkpoints
+    assert len(adapter.requests) == 1
 
 
 def test_generic_invocation_error_remains_bounded_and_truthful() -> None:
@@ -230,12 +124,13 @@ def test_provider_http_failure_does_not_trigger_repair() -> None:
 def test_effective_timeout_path_does_not_hardcode_lower_request_timeout() -> None:
     adapter = _CapturingAdapter()
 
-    synthesize_research(
+    artifact = synthesize_research(
         research_request=_research_request(),
         evidence_pack=_evidence_pack(),
         adapter=adapter,
     )
 
+    assert isinstance(artifact, ResearchArtifact)
     assert adapter.captured_timeout_seconds is None
 
 
@@ -258,13 +153,7 @@ class _CapturingAdapter:
             adapter_id=self.adapter_id,
             provider_name=self.provider_name,
             model_name=self.model_name,
-            default_json_response={
-                "summary": "The prepared evidence supports a bounded conclusion.",
-                "findings": [{"text": "Source A describes the current state.", "source_refs": ["S1"]}],
-                "inferences": [],
-                "uncertainties": [],
-                "recommendation": None,
-            },
+            default_text_response=_valid_bounded_text(),
         ).invoke(request_model)
 
 
@@ -281,19 +170,63 @@ class _ScriptedAdapter:
         step = self.script[len(self.requests) - 1]
         if isinstance(step, Exception):
             raise step
-        assert isinstance(step, dict)
+        assert isinstance(step, str)
         return ModelResponse(
             request_id=request_model.request_id,
             adapter_id=self.adapter_id,
             provider_name=self.provider_name,
             model_name=self.model_name,
             status=ModelInvocationStatus.COMPLETED,
-            output_text=None,
-            output_json=step,
+            output_text=step,
+            output_json=None,
             usage=ModelUsage(input_tokens=1, output_tokens=1, total_tokens=2, estimated_cost=0.0, latency_ms=1),
             warnings=(),
             raw_response_ref=f"fake://{self.adapter_id}/{request_model.request_id}",
         )
+
+
+def _valid_bounded_text() -> str:
+    return "\n".join(
+        [
+            "SUMMARY:",
+            "The prepared evidence supports a bounded conclusion.",
+            "",
+            "FINDINGS:",
+            "- text: Source A describes the current state.",
+            "  cites: S1",
+            "",
+            "INFERENCES:",
+            "- A bounded next step remains supported.",
+            "",
+            "UNCERTAINTIES:",
+            "- No live validation was performed.",
+            "",
+            "RECOMMENDATION:",
+            "Proceed with the bounded path.",
+        ]
+    )
+
+
+def _invalid_bounded_text_missing_summary() -> str:
+    return "\n".join(
+        [
+            "SUMMARY:",
+            "   ",
+            "",
+            "FINDINGS:",
+            "- text: Source A describes the current state.",
+            "  cites: S1",
+            "",
+            "INFERENCES:",
+            "- A bounded next step remains supported.",
+            "",
+            "UNCERTAINTIES:",
+            "- No live validation was performed.",
+            "",
+            "RECOMMENDATION:",
+            "Proceed with the bounded path.",
+        ]
+    )
 
 
 def _research_request() -> ResearchRequest:

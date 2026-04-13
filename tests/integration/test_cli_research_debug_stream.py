@@ -21,27 +21,20 @@ from jeff.memory import InMemoryMemoryStore
 from tests.fixtures.cli import build_state_with_runs
 
 
-def test_live_debug_stream_shows_malformed_primary_and_repair_success_before_final_result(
+def test_live_debug_stream_shows_formatter_fallback_after_deterministic_transform_failure(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    cli, document = _build_docs_cli(
-        tmp_path,
-        script=(
-            ModelMalformedOutputError(
-                "primary malformed",
-                raw_output='summary: repaired summary\nfindings: [{"text":"Observed fact","source_refs":["S1"]}]',
-            ),
-            {
-                "summary": "Repaired summary.",
-                "findings": [{"text": "Observed fact", "source_refs": ["S1"]}],
-                "inferences": [],
-                "uncertainties": [],
-                "recommendation": None,
-            },
-        ),
-    )
+    cli, document = _build_docs_cli(tmp_path, script=(_valid_bounded_text(), _valid_formatter_json()))
+    original_transform = research_synthesis_module.transform_step1_bounded_text_to_candidate_payload
+
+    def failing_transform(_: str) -> dict[str, object]:
+        raise research_synthesis_module.ResearchSynthesisValidationError(
+            "forced structural transform failure for formatter",
+        )
+
+    research_synthesis_module.transform_step1_bounded_text_to_candidate_payload = failing_transform
     _install_inputs(
         monkeypatch,
         [
@@ -53,23 +46,23 @@ def test_live_debug_stream_shows_malformed_primary_and_repair_success_before_fin
         ],
     )
 
-    exit_code = _run_interactive(cli)
+    try:
+        exit_code = _run_interactive(cli)
+    finally:
+        research_synthesis_module.transform_step1_bounded_text_to_candidate_payload = original_transform
     captured = capsys.readouterr()
 
     assert exit_code == 0
-    assert captured.out.index("[debug][research] source_key_map_built") < captured.out.index(
-        "[debug][research] primary_synthesis_failed"
+    assert captured.out.index("[debug][research] deterministic_transform_failed") < captured.out.index(
+        "[debug][research] formatter_fallback_started"
     )
-    assert captured.out.index("[debug][research] primary_synthesis_failed") < captured.out.index(
-        "[debug][research] repair_pass_started"
+    assert captured.out.index("[debug][research] formatter_fallback_started") < captured.out.index(
+        "[debug][research] formatter_fallback_succeeded"
     )
-    assert captured.out.index("[debug][research] repair_pass_started") < captured.out.index(
-        "[debug][research] repair_pass_succeeded"
-    )
-    assert captured.out.index("[debug][research] repair_pass_succeeded") < captured.out.index("RESEARCH docs")
+    assert captured.out.index("[debug][research] formatter_fallback_succeeded") < captured.out.index("RESEARCH docs")
 
 
-def test_live_debug_stream_shows_provenance_stage_failure_checkpoint(
+def test_live_debug_stream_shows_formatter_failure_without_false_success(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -77,15 +70,54 @@ def test_live_debug_stream_shows_provenance_stage_failure_checkpoint(
     cli, document = _build_docs_cli(
         tmp_path,
         script=(
+            _valid_bounded_text(),
             {
-                "summary": "The documents support a bounded rollout.",
-                "findings": [{"text": "The plan emphasizes bounded rollout.", "source_refs": ["S1"]}],
-                "inferences": [],
-                "uncertainties": [],
-                "recommendation": None,
+                "summary": "Repaired summary.",
+                "findings": [{"text": "Observed fact", "source_refs": ["S9"]}],
+                "inferences": ["A bounded next step remains supported."],
+                "uncertainties": ["No live validation was performed."],
+                "recommendation": "Proceed with the bounded path.",
             },
         ),
     )
+    original_transform = research_synthesis_module.transform_step1_bounded_text_to_candidate_payload
+
+    def failing_transform(_: str) -> dict[str, object]:
+        raise research_synthesis_module.ResearchSynthesisValidationError(
+            "forced structural transform failure for formatter",
+        )
+
+    research_synthesis_module.transform_step1_bounded_text_to_candidate_payload = failing_transform
+    _install_inputs(
+        monkeypatch,
+        [
+            "/project use project-1",
+            "/work use wu-1",
+            "/mode debug",
+            f'/research docs "What does the bounded plan support?" "{document}"',
+            "quit",
+        ],
+    )
+
+    try:
+        exit_code = _run_interactive(cli)
+    finally:
+        research_synthesis_module.transform_step1_bounded_text_to_candidate_payload = original_transform
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "[debug][research] formatter_fallback_started" in captured.out
+    assert "[debug][research] formatter_fallback_succeeded" in captured.out
+    assert "[debug][research] citation_remap_failed" in captured.out
+    assert "unknown citation refs" in captured.err
+
+
+def test_live_debug_stream_shows_provenance_stage_failure_checkpoint(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    cli, document = _build_docs_cli(tmp_path, script=(_valid_bounded_text(),))
     original_validate = research_synthesis_module.validate_research_provenance
 
     def failing_validate(**kwargs):  # type: ignore[no-untyped-def]
@@ -113,148 +145,6 @@ def test_live_debug_stream_shows_provenance_stage_failure_checkpoint(
     assert "[debug][research] provenance_validation_started" in captured.out
     assert "[debug][research] provenance_validation_failed" in captured.out
     assert "forced provenance failure for debug" in captured.err
-
-
-def test_live_debug_stream_shows_schema_incomplete_primary_then_repair_success_before_final_result(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    cli, document = _build_docs_cli(
-        tmp_path,
-        script=(
-            {
-                "findings": [{"text": "Observed fact", "source_refs": ["S1"]}],
-                "inferences": [],
-                "uncertainties": [],
-                "recommendation": None,
-            },
-            {
-                "summary": "Repaired summary.",
-                "findings": [{"text": "Observed fact", "source_refs": ["S1"]}],
-                "inferences": [],
-                "uncertainties": [],
-                "recommendation": None,
-            },
-        ),
-    )
-    _install_inputs(
-        monkeypatch,
-        [
-            "/project use project-1",
-            "/work use wu-1",
-            "/mode debug",
-            f'/research docs "What does the bounded plan support?" "{document}"',
-            "quit",
-        ],
-    )
-
-    exit_code = _run_interactive(cli)
-    captured = capsys.readouterr()
-
-    assert exit_code == 0
-    assert "[debug][research] primary_synthesis_failed" in captured.out
-    assert "[debug][research] primary_synthesis_succeeded" not in captured.out
-    assert "failure_class=schema_incomplete" in captured.out
-    assert "[debug][research] repair_pass_started" in captured.out
-    assert "[debug][research] repair_pass_succeeded" in captured.out
-    assert captured.out.index("[debug][research] primary_synthesis_failed") < captured.out.index(
-        "[debug][research] repair_pass_started"
-    )
-    assert captured.out.index("[debug][research] repair_pass_succeeded") < captured.out.index("RESEARCH docs")
-
-
-def test_live_debug_stream_does_not_report_repair_success_for_incomplete_repair_json(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    cli, document = _build_docs_cli(
-        tmp_path,
-        script=(
-            {
-                "findings": [{"text": "Observed fact", "source_refs": ["S1"]}],
-                "inferences": [],
-                "uncertainties": [],
-                "recommendation": None,
-            },
-            {
-                "summary": "   ",
-                "findings": [{"text": "Observed fact", "source_refs": ["S1"]}],
-                "inferences": [],
-                "uncertainties": [],
-                "recommendation": None,
-            },
-        ),
-    )
-    _install_inputs(
-        monkeypatch,
-        [
-            "/project use project-1",
-            "/work use wu-1",
-            "/mode debug",
-            f'/research docs "What does the bounded plan support?" "{document}"',
-            "quit",
-        ],
-    )
-
-    exit_code = _run_interactive(cli)
-    captured = capsys.readouterr()
-
-    assert exit_code == 0
-    assert "[debug][research] repair_pass_started" in captured.out
-    assert "[debug][research] repair_pass_failed" in captured.out
-    assert "failure_class=schema_incomplete" in captured.out
-    assert "reason=summary must be a non-empty string" in captured.out
-    assert "[debug][research] repair_pass_succeeded" not in captured.out
-    assert "[debug][research] citation_remap_started" not in captured.out
-    assert "summary must be a non-empty string" in captured.err
-
-
-def test_live_debug_stream_shows_schema_incomplete_nested_field_failure_then_repair_success(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    cli, document = _build_docs_cli(
-        tmp_path,
-        script=(
-            {
-                "summary": "Observed summary.",
-                "findings": [{"description": "Observed fact", "source_ref": "S1"}],
-                "inferences": [],
-                "uncertainties": [],
-                "recommendation": None,
-            },
-            {
-                "summary": "Observed summary.",
-                "findings": [{"text": "Observed fact", "source_refs": ["S1"]}],
-                "inferences": [],
-                "uncertainties": [],
-                "recommendation": None,
-            },
-        ),
-    )
-    _install_inputs(
-        monkeypatch,
-        [
-            "/project use project-1",
-            "/work use wu-1",
-            "/mode debug",
-            f'/research docs "What does the bounded plan support?" "{document}"',
-            "quit",
-        ],
-    )
-
-    exit_code = _run_interactive(cli)
-    captured = capsys.readouterr()
-
-    assert exit_code == 0
-    assert "[debug][research] primary_synthesis_failed" in captured.out
-    assert "failure_class=schema_incomplete" in captured.out
-    assert "[debug][research] repair_pass_started" in captured.out
-    assert "[debug][research] repair_pass_succeeded" in captured.out
-    assert "[debug][research] primary_synthesis_succeeded" not in captured.out
 
 
 def _build_docs_cli(tmp_path: Path, *, script: tuple[object, ...]) -> tuple[JeffCLI, Path]:
@@ -303,6 +193,20 @@ class _ScriptedAdapter:
         step = self.script[len(self.requests) - 1]
         if isinstance(step, Exception):
             raise step
+        if request_model.response_mode.value == "TEXT":
+            assert isinstance(step, str)
+            return ModelResponse(
+                request_id=request_model.request_id,
+                adapter_id=self.adapter_id,
+                provider_name=self.provider_name,
+                model_name=self.model_name,
+                status=ModelInvocationStatus.COMPLETED,
+                output_text=step,
+                output_json=None,
+                usage=ModelUsage(input_tokens=1, output_tokens=1, total_tokens=2, estimated_cost=0.0, latency_ms=1),
+                warnings=(),
+                raw_response_ref=f"fake://{self.adapter_id}/{request_model.request_id}",
+            )
         assert isinstance(step, dict)
         return ModelResponse(
             request_id=request_model.request_id,
@@ -316,3 +220,35 @@ class _ScriptedAdapter:
             warnings=(),
             raw_response_ref=f"fake://{self.adapter_id}/{request_model.request_id}",
         )
+
+
+def _valid_bounded_text() -> str:
+    return "\n".join(
+        [
+            "SUMMARY:",
+            "The documents support a bounded rollout.",
+            "",
+            "FINDINGS:",
+            "- text: The plan emphasizes bounded rollout.",
+            "  cites: S1",
+            "",
+            "INFERENCES:",
+            "- A bounded next step remains supported.",
+            "",
+            "UNCERTAINTIES:",
+            "- No live validation was performed.",
+            "",
+            "RECOMMENDATION:",
+            "Proceed with the bounded path.",
+        ]
+    )
+
+
+def _valid_formatter_json() -> dict[str, object]:
+    return {
+        "summary": "Repaired summary.",
+        "findings": [{"text": "Observed fact", "source_refs": ["S1"]}],
+        "inferences": ["A bounded next step remains supported."],
+        "uncertainties": ["No live validation was performed."],
+        "recommendation": "Proceed with the bounded path.",
+    }

@@ -1,5 +1,3 @@
-from dataclasses import dataclass
-
 import pytest
 
 from jeff.cognitive import (
@@ -13,54 +11,39 @@ from jeff.cognitive import (
     build_research_model_request,
     synthesize_research,
 )
-from jeff.infrastructure import FakeModelAdapter
+from jeff.infrastructure import FakeModelAdapter, ModelMalformedOutputError
 
 
-def test_build_research_model_request_includes_bounded_evidence_and_instructions() -> None:
+def test_build_research_model_request_includes_bounded_evidence_and_step1_syntax() -> None:
     request = _research_request()
     evidence_pack = _evidence_pack()
 
-    model_request = build_research_model_request(request, evidence_pack, adapter_id="fake-json")
+    model_request = build_research_model_request(request, evidence_pack, adapter_id="fake-text")
 
-    assert model_request.response_mode.value == "JSON"
+    assert model_request.response_mode.value == "TEXT"
+    assert model_request.json_schema is None
     assert model_request.purpose == "research_synthesis"
     assert "TASK: bounded research synthesis" in model_request.prompt
-    assert "Output exactly one JSON object matching json_schema." in model_request.prompt
-    assert "Do not output markdown, code fences, or extra prose." in model_request.prompt
-    assert "QUESTION: What does the prepared evidence support?" in model_request.prompt
-    assert "ALLOWED_CITATION_KEYS: S1, S2" in model_request.prompt
-    assert "Required JSON shape" not in model_request.prompt
+    assert "Output bounded plain text using the exact section syntax below." in model_request.prompt
+    assert "REQUIRED_BOUNDED_SYNTAX:" in model_request.prompt
+    assert "SUMMARY:" in model_request.prompt
+    assert "FINDINGS:" in model_request.prompt
+    assert "RECOMMENDATION:" in model_request.prompt
     assert "source-a" not in model_request.prompt
     assert "source-b" not in model_request.prompt
     assert "E1|refs=S1|text=The current state is stable." in model_request.prompt
-    assert "C1|Constraint A" in model_request.prompt
-    assert "S1|document|Bounded Note A|doc://a|n/a|Source A says the current state is stable." in model_request.prompt
-    assert model_request.json_schema["properties"]["findings"]["items"]["properties"]["source_refs"]["items"]["enum"] == [
-        "S1",
-        "S2",
-    ]
-    assert "Return exactly one JSON object that matches json_schema." in model_request.system_instructions
-    assert "No markdown, no code fences, no commentary." in model_request.system_instructions
-    assert model_request.metadata["citation_keys"] == ["S1", "S2"]
-    assert model_request.metadata["adapter_id"] == "fake-json"
+    assert "Return bounded plain text in the declared section syntax." in model_request.system_instructions
+    assert "Do not return JSON." in model_request.system_instructions
+    assert model_request.metadata["expected_output_shape"] == "step1_bounded_text_v1"
 
 
-def test_successful_synthesis_using_fake_model_adapter_json_mode() -> None:
+def test_successful_synthesis_uses_bounded_text_then_deterministic_transform() -> None:
     artifact = synthesize_research(
         research_request=_research_request(),
         evidence_pack=_evidence_pack(),
         adapter=FakeModelAdapter(
-            adapter_id="fake-json",
-            default_json_response={
-                "summary": "The prepared evidence supports a bounded conclusion.",
-                "findings": [
-                    {"text": "Source A describes the current state.", "source_refs": ["S1"]},
-                    {"text": "Source B confirms the same constraint.", "source_refs": ["S2"]},
-                ],
-                "inferences": ["A minimal next step is better supported than expansion."],
-                "uncertainties": ["External conditions were not observed directly."],
-                "recommendation": "Proceed with the bounded option first.",
-            },
+            adapter_id="fake-text",
+            default_text_response=_valid_step1_text(),
         ),
     )
 
@@ -72,213 +55,132 @@ def test_successful_synthesis_using_fake_model_adapter_json_mode() -> None:
     assert artifact.uncertainties == ("External conditions were not observed directly.",)
 
 
-def test_malformed_json_output_fails_closed() -> None:
+def test_malformed_output_fails_closed() -> None:
     with pytest.raises(ResearchSynthesisRuntimeError, match="malformed_output"):
         synthesize_research(
             research_request=_research_request(),
             evidence_pack=_evidence_pack(),
-            adapter=FakeModelAdapter(adapter_id="fake-json", default_json_response=None),
-        )
-
-
-def test_missing_required_fields_fail_closed() -> None:
-    with pytest.raises(ResearchSynthesisValidationError, match="findings must be a list"):
-        synthesize_research(
-            research_request=_research_request(),
-            evidence_pack=_evidence_pack(),
             adapter=FakeModelAdapter(
-                adapter_id="fake-json",
-                default_json_response={
-                    "summary": "Missing findings should fail.",
-                    "inferences": [],
-                    "uncertainties": [],
-                    "recommendation": None,
-                },
+                adapter_id="fake-text",
+                forced_exception=ModelMalformedOutputError("adapter returned malformed output"),
             ),
         )
 
 
-def test_primary_output_missing_summary_is_not_treated_as_success() -> None:
+def test_invalid_bounded_text_fails_closed_at_syntax_precheck() -> None:
     events: list[dict[str, object]] = []
 
-    with pytest.raises(ResearchSynthesisValidationError, match="summary must be a non-empty string"):
+    with pytest.raises(ResearchSynthesisValidationError, match="UNCERTAINTIES"):
         synthesize_research(
             research_request=_research_request(),
             evidence_pack=_evidence_pack(),
             adapter=FakeModelAdapter(
-                adapter_id="fake-json",
-                default_json_response={
-                    "findings": [{"text": "Observed fact", "source_refs": ["S1"]}],
-                    "inferences": [],
-                    "uncertainties": [],
-                    "recommendation": None,
-                },
+                adapter_id="fake-text",
+                default_text_response=_invalid_step1_text_missing_uncertainties(),
             ),
             debug_emitter=events.append,
         )
 
     checkpoints = [event["checkpoint"] for event in events]
-    assert "primary_synthesis_failed" in checkpoints
-    assert "primary_synthesis_succeeded" not in checkpoints
-    assert "repair_pass_started" in checkpoints
-    assert "repair_pass_failed" in checkpoints
-    assert "citation_remap_started" not in checkpoints
-    failure_event = next(event for event in events if event["checkpoint"] == "primary_synthesis_failed")
-    assert failure_event["payload"]["failure_class"] == "schema_incomplete"
-    assert "summary must be a non-empty string" in str(failure_event["payload"]["reason"])
+    assert "content_generation_started" in checkpoints
+    assert "content_generation_succeeded" in checkpoints
+    assert "syntax_precheck_failed" in checkpoints
+    assert "deterministic_transform_started" not in checkpoints
+    assert "repair_pass_started" not in checkpoints
 
 
-def test_primary_synthesis_succeeded_is_emitted_only_after_root_shape_gate_passes() -> None:
+def test_deterministic_transform_succeeds_before_citation_remap() -> None:
     events: list[dict[str, object]] = []
 
     artifact = synthesize_research(
         research_request=_research_request(),
         evidence_pack=_evidence_pack(),
         adapter=FakeModelAdapter(
-            adapter_id="fake-json",
-            default_json_response={
-                "summary": "Artifact only.",
-                "findings": [{"text": "Observed fact", "source_refs": ["S1"]}],
-                "inferences": [],
-                "uncertainties": [],
-                "recommendation": None,
-            },
+            adapter_id="fake-text",
+            default_text_response=_valid_step1_text(),
         ),
         debug_emitter=events.append,
     )
 
-    assert artifact.summary == "Artifact only."
+    assert artifact.summary == "The prepared evidence supports a bounded conclusion."
     checkpoints = [event["checkpoint"] for event in events]
-    assert "primary_synthesis_succeeded" in checkpoints
-    assert "citation_remap_started" in checkpoints
-    assert checkpoints.index("primary_synthesis_succeeded") < checkpoints.index("citation_remap_started")
-
-
-def test_primary_schema_incomplete_json_can_succeed_via_one_repair_pass() -> None:
-    events: list[dict[str, object]] = []
-    adapter = _ScriptedAdapter(
-        script=(
-            {
-                "findings": [{"text": "Observed fact", "source_refs": ["S1"]}],
-                "inferences": [],
-                "uncertainties": [],
-                "recommendation": None,
-            },
-            {
-                "summary": "Repaired summary.",
-                "findings": [{"text": "Observed fact", "source_refs": ["S1"]}],
-                "inferences": [],
-                "uncertainties": [],
-                "recommendation": None,
-            },
-        )
-    )
-
-    artifact = synthesize_research(
-        research_request=_research_request(),
-        evidence_pack=_evidence_pack(),
-        adapter=adapter,
-        debug_emitter=events.append,
-    )
-
-    assert artifact.summary == "Repaired summary."
-    checkpoints = [event["checkpoint"] for event in events]
-    assert "primary_synthesis_failed" in checkpoints
-    assert "primary_synthesis_succeeded" not in checkpoints
-    assert "repair_pass_started" in checkpoints
-    assert "repair_pass_succeeded" in checkpoints
-    assert checkpoints.index("primary_synthesis_failed") < checkpoints.index("repair_pass_started")
-    assert checkpoints.index("repair_pass_succeeded") < checkpoints.index("citation_remap_started")
-
-
-def test_primary_schema_incomplete_nested_field_mismatch_can_succeed_via_repair() -> None:
-    adapter = _ScriptedAdapter(
-        script=(
-            {
-                "summary": "Observed summary.",
-                "findings": [{"description": "Observed fact", "source_ref": "S1"}],
-                "inferences": [],
-                "uncertainties": [],
-                "recommendation": None,
-            },
-            {
-                "summary": "Observed summary.",
-                "findings": [{"text": "Observed fact", "source_refs": ["S1"]}],
-                "inferences": [],
-                "uncertainties": [],
-                "recommendation": None,
-            },
-        )
-    )
-
-    artifact = synthesize_research(
-        research_request=_research_request(),
-        evidence_pack=_evidence_pack(),
-        adapter=adapter,
-    )
-
-    assert artifact.summary == "Observed summary."
-    assert artifact.findings[0].text == "Observed fact"
-    assert artifact.findings[0].source_refs == ("source-a",)
-
-
-def test_unknown_citation_refs_in_returned_findings_fail_closed() -> None:
-    with pytest.raises(ResearchSynthesisValidationError, match="unknown citation refs"):
-        synthesize_research(
-            research_request=_research_request(),
-            evidence_pack=_evidence_pack(),
-            adapter=FakeModelAdapter(
-                adapter_id="fake-json",
-                default_json_response={
-                    "summary": "This should fail source validation.",
-                    "findings": [{"text": "Unsupported claim", "source_refs": ["S9"]}],
-                    "inferences": [],
-                    "uncertainties": [],
-                    "recommendation": None,
-                },
-            ),
-        )
+    assert "content_generation_succeeded" in checkpoints
+    assert "deterministic_transform_started" in checkpoints
+    assert "deterministic_transform_succeeded" in checkpoints
+    assert checkpoints.index("content_generation_succeeded") < checkpoints.index("deterministic_transform_started")
+    assert checkpoints.index("deterministic_transform_succeeded") < checkpoints.index("citation_remap_started")
 
 
 def test_findings_inferences_and_uncertainties_remain_distinct() -> None:
     artifact = synthesize_research(
         research_request=_research_request(),
         evidence_pack=_evidence_pack(),
-            adapter=FakeModelAdapter(
-                adapter_id="fake-json",
-                default_json_response={
-                    "summary": "Distinct fields stay distinct.",
-                    "findings": [{"text": "Observed fact", "source_refs": ["S1"]}],
-                    "inferences": ["Interpretation"],
-                    "uncertainties": ["Open question"],
-                    "recommendation": None,
-                },
-            ),
+        adapter=FakeModelAdapter(
+            adapter_id="fake-text",
+            default_text_response=_valid_step1_text(),
+        ),
     )
 
-    assert artifact.findings[0].text == "Observed fact"
-    assert artifact.inferences == ("Interpretation",)
-    assert artifact.uncertainties == ("Open question",)
+    assert artifact.findings[0].text == "Source A describes the current state."
+    assert artifact.inferences == ("A minimal next step is better supported than expansion.",)
+    assert artifact.uncertainties == ("External conditions were not observed directly.",)
 
 
 def test_synthesize_research_returns_research_artifact_not_model_response() -> None:
     result = synthesize_research(
         research_request=_research_request(),
         evidence_pack=_evidence_pack(),
-            adapter=FakeModelAdapter(
-                adapter_id="fake-json",
-                default_json_response={
-                    "summary": "Artifact only.",
-                    "findings": [{"text": "Observed fact", "source_refs": ["S1"]}],
-                    "inferences": [],
-                    "uncertainties": [],
-                    "recommendation": None,
-                },
-            ),
+        adapter=FakeModelAdapter(
+            adapter_id="fake-text",
+            default_text_response=_valid_step1_text(),
+        ),
     )
 
     assert isinstance(result, ResearchArtifact)
     assert not hasattr(result, "output_json")
+
+
+def _valid_step1_text() -> str:
+    return "\n".join(
+        [
+            "SUMMARY:",
+            "The prepared evidence supports a bounded conclusion.",
+            "",
+            "FINDINGS:",
+            "- text: Source A describes the current state.",
+            "  cites: S1",
+            "- text: Source B confirms the same constraint.",
+            "  cites: S2",
+            "",
+            "INFERENCES:",
+            "- A minimal next step is better supported than expansion.",
+            "",
+            "UNCERTAINTIES:",
+            "- External conditions were not observed directly.",
+            "",
+            "RECOMMENDATION:",
+            "Proceed with the bounded option first.",
+        ]
+    )
+
+
+def _invalid_step1_text_missing_uncertainties() -> str:
+    return "\n".join(
+        [
+            "SUMMARY:",
+            "The prepared evidence supports a bounded conclusion.",
+            "",
+            "FINDINGS:",
+            "- text: Source A describes the current state.",
+            "  cites: S1",
+            "",
+            "INFERENCES:",
+            "- A minimal next step is better supported than expansion.",
+            "",
+            "RECOMMENDATION:",
+            "Proceed with the bounded option first.",
+        ]
+    )
 
 
 def _research_request() -> ResearchRequest:
@@ -324,33 +226,3 @@ def _evidence_pack() -> EvidencePack:
         uncertainties=("External verification was not performed.",),
         constraints=("Constraint A",),
     )
-
-
-@dataclass(slots=True)
-class _ScriptedAdapter:
-    script: tuple[object, ...]
-    adapter_id: str = "research-scripted"
-    provider_name: str = "fake"
-    model_name: str = "research-model"
-    calls: int = 0
-
-    def invoke(self, request_model):  # type: ignore[no-untyped-def]
-        step = self.script[self.calls]
-        self.calls += 1
-        if isinstance(step, Exception):
-            raise step
-        assert isinstance(step, dict)
-        from jeff.infrastructure import ModelInvocationStatus, ModelResponse, ModelUsage
-
-        return ModelResponse(
-            request_id=request_model.request_id,
-            adapter_id=self.adapter_id,
-            provider_name=self.provider_name,
-            model_name=self.model_name,
-            status=ModelInvocationStatus.COMPLETED,
-            output_text=None,
-            output_json=step,
-            usage=ModelUsage(input_tokens=1, output_tokens=1, total_tokens=2, estimated_cost=0.0, latency_ms=1),
-            warnings=(),
-            raw_response_ref=f"fake://{self.adapter_id}/{request_model.request_id}",
-        )

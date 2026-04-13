@@ -22,13 +22,13 @@ def test_runtime_default_fake_adapter_can_drive_research_synthesis() -> None:
                     provider_kind=AdapterProviderKind.FAKE,
                     adapter_id="fake-default",
                     model_name="fake-model",
-                    fake_json_response={
-                        "summary": "Default adapter summary.",
-                        "findings": [{"text": "Bounded fact", "source_refs": ["S1"]}],
-                        "inferences": ["Bounded inference"],
-                        "uncertainties": ["Known uncertainty"],
-                        "recommendation": "Stay bounded.",
-                    },
+                    fake_text_response=_bounded_text(
+                        summary="Default adapter summary.",
+                        findings=(("Bounded fact", "S1"),),
+                        inference="Bounded inference",
+                        uncertainty="Known uncertainty",
+                        recommendation="Stay bounded.",
+                    ),
                 ),
             ),
         )
@@ -53,25 +53,25 @@ def test_runtime_explicit_adapter_selection_works_with_multiple_fake_adapters() 
                     provider_kind=AdapterProviderKind.FAKE,
                     adapter_id="fake-default",
                     model_name="fake-model",
-                    fake_json_response={
-                        "summary": "Default summary.",
-                        "findings": [{"text": "Default fact", "source_refs": ["S1"]}],
-                        "inferences": [],
-                        "uncertainties": [],
-                        "recommendation": None,
-                    },
+                    fake_text_response=_bounded_text(
+                        summary="Default summary.",
+                        findings=(("Default fact", "S1"),),
+                        inference="Default inference",
+                        uncertainty="Default uncertainty",
+                        recommendation="Default recommendation.",
+                    ),
                 ),
                 AdapterFactoryConfig(
                     provider_kind=AdapterProviderKind.FAKE,
                     adapter_id="fake-secondary",
                     model_name="fake-model-2",
-                    fake_json_response={
-                        "summary": "Secondary summary.",
-                        "findings": [{"text": "Secondary fact", "source_refs": ["S2"]}],
-                        "inferences": ["Secondary inference"],
-                        "uncertainties": ["Secondary uncertainty"],
-                        "recommendation": "Use secondary.",
-                    },
+                    fake_text_response=_bounded_text(
+                        summary="Secondary summary.",
+                        findings=(("Secondary fact", "S2"),),
+                        inference="Secondary inference",
+                        uncertainty="Secondary uncertainty",
+                        recommendation="Use secondary.",
+                    ),
                 ),
             ),
         )
@@ -86,6 +86,38 @@ def test_runtime_explicit_adapter_selection_works_with_multiple_fake_adapters() 
 
     assert artifact.summary == "Secondary summary."
     assert artifact.findings[0].source_refs == ("source-b",)
+
+
+def _bounded_text(
+    *,
+    summary: str,
+    findings: tuple[tuple[str, str], ...],
+    inference: str,
+    uncertainty: str,
+    recommendation: str,
+) -> str:
+    finding_lines: list[str] = []
+    for text, citation_key in findings:
+        finding_lines.extend([f"- text: {text}", f"  cites: {citation_key}"])
+
+    return "\n".join(
+        [
+            "SUMMARY:",
+            summary,
+            "",
+            "FINDINGS:",
+            *finding_lines,
+            "",
+            "INFERENCES:",
+            f"- {inference}",
+            "",
+            "UNCERTAINTIES:",
+            f"- {uncertainty}",
+            "",
+            "RECOMMENDATION:",
+            recommendation,
+        ]
+    )
 
 
 def _request() -> ResearchRequest:

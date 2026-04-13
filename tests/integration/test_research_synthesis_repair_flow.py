@@ -11,6 +11,7 @@ from jeff.cognitive import (
     SourceItem,
     synthesize_research_with_runtime,
 )
+from jeff.cognitive.research import synthesis as research_synthesis_module
 from jeff.infrastructure import (
     AdapterRegistry,
     InfrastructureServices,
@@ -23,86 +24,118 @@ from jeff.infrastructure import (
 )
 
 
-def test_runtime_repair_flow_recovers_from_primary_malformed_output() -> None:
-    adapter = _ScriptedAdapter(
-        script=(
-            ModelMalformedOutputError(
-                "primary malformed",
-                raw_output='summary: repaired summary\nfindings: [{"text":"Observed fact","source_refs":["S1"]}]',
-            ),
-            {
-                "summary": "Repaired summary.",
-                "findings": [{"text": "Observed fact", "source_refs": ["S1"]}],
-                "inferences": ["A bounded next step remains supported."],
-                "uncertainties": ["No live validation was performed."],
-                "recommendation": "Proceed with the bounded path.",
-            },
-        )
+def test_runtime_formatter_fallback_recovers_from_deterministic_transform_failure() -> None:
+    primary_adapter = _ScriptedAdapter(script=(_valid_bounded_text(),))
+    formatter_adapter = _ScriptedAdapter(
+        adapter_id="research-repair",
+        model_name="formatter-model",
+        script=(_valid_formatter_json(),),
     )
 
-    artifact = synthesize_research_with_runtime(
-        research_request=_research_request(),
-        evidence_pack=_evidence_pack(),
-        infrastructure_services=_services(adapter),
-    )
+    original_transform = research_synthesis_module.transform_step1_bounded_text_to_candidate_payload
+
+    def failing_transform(_: str) -> dict[str, object]:
+        raise ResearchSynthesisValidationError("forced structural transform failure for formatter")
+
+    research_synthesis_module.transform_step1_bounded_text_to_candidate_payload = failing_transform
+    try:
+        artifact = synthesize_research_with_runtime(
+            research_request=_research_request(),
+            evidence_pack=_evidence_pack(),
+            infrastructure_services=_services(
+                primary_adapter,
+                repair_adapter=formatter_adapter,
+                purpose_overrides=PurposeOverrides(research=primary_adapter.adapter_id, research_repair=formatter_adapter.adapter_id),
+            ),
+        )
+    finally:
+        research_synthesis_module.transform_step1_bounded_text_to_candidate_payload = original_transform
 
     assert artifact.summary == "Repaired summary."
     assert artifact.findings[0].source_refs == ("source-a",)
-    assert artifact.source_ids == ("source-a",)
-    assert [request.purpose for request in adapter.requests] == ["research_synthesis", "research_synthesis_repair"]
+    assert len(primary_adapter.requests) == 1
+    assert len(formatter_adapter.requests) == 1
+    assert formatter_adapter.requests[0].purpose == "research_synthesis_repair"
 
 
-def test_runtime_repair_flow_can_use_separate_repair_adapter_when_configured() -> None:
-    primary_adapter = _ScriptedAdapter(
-        adapter_id="research-primary",
-        model_name="reasoning-model",
-        script=(
-            ModelMalformedOutputError(
-                "primary malformed",
-                raw_output='summary: repaired summary\nfindings: [{"text":"Observed fact","source_refs":["S1"]}]',
-            ),
-        ),
+def test_runtime_formatter_fallback_uses_bounded_text_not_original_evidence_pack() -> None:
+    primary_adapter = _ScriptedAdapter(script=(_valid_bounded_text(),))
+    formatter_adapter = _ScriptedAdapter(
+        adapter_id="research-repair",
+        model_name="formatter-model",
+        script=(_valid_formatter_json(),),
     )
-    repair_adapter = _ScriptedAdapter(
+    original_transform = research_synthesis_module.transform_step1_bounded_text_to_candidate_payload
+
+    def failing_transform(_: str) -> dict[str, object]:
+        raise ResearchSynthesisValidationError("forced structural transform failure for formatter")
+
+    research_synthesis_module.transform_step1_bounded_text_to_candidate_payload = failing_transform
+    try:
+        synthesize_research_with_runtime(
+            research_request=_research_request(),
+            evidence_pack=_evidence_pack(),
+            infrastructure_services=_services(
+                primary_adapter,
+                repair_adapter=formatter_adapter,
+                purpose_overrides=PurposeOverrides(research=primary_adapter.adapter_id, research_repair=formatter_adapter.adapter_id),
+            ),
+        )
+    finally:
+        research_synthesis_module.transform_step1_bounded_text_to_candidate_payload = original_transform
+
+    formatter_request = formatter_adapter.requests[0]
+    assert "BOUNDED_CONTENT:" in formatter_request.prompt
+    assert "Do not use or reconstruct the original evidence pack." in formatter_request.prompt
+    assert "Fact from source A." not in formatter_request.prompt
+    assert "Fact from source B." not in formatter_request.prompt
+
+
+def test_runtime_formatter_fallback_fails_closed_when_formatter_output_is_invalid() -> None:
+    primary_adapter = _ScriptedAdapter(script=(_valid_bounded_text(),))
+    formatter_adapter = _ScriptedAdapter(
         adapter_id="research-repair",
         model_name="formatter-model",
         script=(
             {
                 "summary": "Repaired summary.",
-                "findings": [{"text": "Observed fact", "source_refs": ["S1"]}],
+                "findings": [{"text": "Observed fact", "source_refs": ["S9"]}],
                 "inferences": ["A bounded next step remains supported."],
                 "uncertainties": ["No live validation was performed."],
                 "recommendation": "Proceed with the bounded path.",
             },
         ),
     )
+    original_transform = research_synthesis_module.transform_step1_bounded_text_to_candidate_payload
+    events: list[dict[str, object]] = []
 
-    artifact = synthesize_research_with_runtime(
-        research_request=_research_request(),
-        evidence_pack=_evidence_pack(),
-        infrastructure_services=_services(
-            primary_adapter,
-            repair_adapter=repair_adapter,
-            purpose_overrides=PurposeOverrides(research=primary_adapter.adapter_id, research_repair=repair_adapter.adapter_id),
-        ),
-    )
+    def failing_transform(_: str) -> dict[str, object]:
+        raise ResearchSynthesisValidationError("forced structural transform failure for formatter")
 
-    assert artifact.findings[0].source_refs == ("source-a",)
-    assert artifact.source_ids == ("source-a",)
-    assert len(primary_adapter.requests) == 1
-    assert len(repair_adapter.requests) == 1
-    assert primary_adapter.requests[0].purpose == "research_synthesis"
-    assert repair_adapter.requests[0].purpose == "research_synthesis_repair"
-    assert repair_adapter.requests[0].metadata["adapter_id"] == "research-repair"
+    research_synthesis_module.transform_step1_bounded_text_to_candidate_payload = failing_transform
+    try:
+        with pytest.raises(ResearchSynthesisValidationError, match="unknown citation refs"):
+            synthesize_research_with_runtime(
+                research_request=_research_request(),
+                evidence_pack=_evidence_pack(),
+                infrastructure_services=_services(
+                    primary_adapter,
+                    repair_adapter=formatter_adapter,
+                    purpose_overrides=PurposeOverrides(research=primary_adapter.adapter_id, research_repair=formatter_adapter.adapter_id),
+                ),
+                debug_emitter=events.append,
+            )
+    finally:
+        research_synthesis_module.transform_step1_bounded_text_to_candidate_payload = original_transform
+
+    checkpoints = [event["checkpoint"] for event in events]
+    assert "formatter_fallback_started" in checkpoints
+    assert "formatter_fallback_succeeded" in checkpoints
+    assert "citation_remap_failed" in checkpoints
 
 
-def test_runtime_repair_flow_still_fails_closed_when_repair_also_malformed() -> None:
-    adapter = _ScriptedAdapter(
-        script=(
-            ModelMalformedOutputError("primary malformed", raw_output="summary: bad"),
-            ModelMalformedOutputError("repair malformed", raw_output="still bad"),
-        )
-    )
+def test_runtime_content_generation_failure_does_not_trigger_formatter_fallback() -> None:
+    adapter = _ScriptedAdapter(script=(ModelMalformedOutputError("primary malformed", raw_output="SUMMARY: bad"),))
 
     with pytest.raises(ResearchSynthesisRuntimeError, match="malformed_output"):
         synthesize_research_with_runtime(
@@ -111,113 +144,7 @@ def test_runtime_repair_flow_still_fails_closed_when_repair_also_malformed() -> 
             infrastructure_services=_services(adapter),
         )
 
-    assert len(adapter.requests) == 2
-
-
-def test_runtime_primary_schema_incomplete_output_triggers_repair_before_citation_remap() -> None:
-    adapter = _ScriptedAdapter(
-        script=(
-            {
-                "findings": [{"text": "Observed fact", "source_refs": ["S1"]}],
-                "inferences": [],
-                "uncertainties": [],
-                "recommendation": None,
-            },
-            {
-                "summary": "Repaired summary.",
-                "findings": [{"text": "Observed fact", "source_refs": ["S1"]}],
-                "inferences": [],
-                "uncertainties": [],
-                "recommendation": None,
-            },
-        )
-    )
-    events: list[dict[str, object]] = []
-
-    artifact = synthesize_research_with_runtime(
-        research_request=_research_request(),
-        evidence_pack=_evidence_pack(),
-        infrastructure_services=_services(adapter),
-        debug_emitter=events.append,
-    )
-
-    assert artifact.summary == "Repaired summary."
-    checkpoints = [event["checkpoint"] for event in events]
-    assert "primary_synthesis_failed" in checkpoints
-    assert "primary_synthesis_succeeded" not in checkpoints
-    assert "repair_pass_started" in checkpoints
-    assert "repair_pass_succeeded" in checkpoints
-    assert len(adapter.requests) == 2
-
-
-def test_runtime_primary_schema_incomplete_output_fails_before_citation_remap_when_repair_also_incomplete() -> None:
-    adapter = _ScriptedAdapter(
-        script=(
-            {
-                "findings": [{"text": "Observed fact", "source_refs": ["S1"]}],
-                "inferences": [],
-                "uncertainties": [],
-                "recommendation": None,
-            },
-            {
-                "findings": [{"text": "Observed fact", "source_refs": ["S1"]}],
-                "inferences": [],
-                "uncertainties": [],
-                "recommendation": None,
-            },
-        )
-    )
-    events: list[dict[str, object]] = []
-
-    with pytest.raises(ResearchSynthesisValidationError, match="summary must be a non-empty string"):
-        synthesize_research_with_runtime(
-            research_request=_research_request(),
-            evidence_pack=_evidence_pack(),
-            infrastructure_services=_services(adapter),
-            debug_emitter=events.append,
-        )
-
-    checkpoints = [event["checkpoint"] for event in events]
-    assert "primary_synthesis_failed" in checkpoints
-    assert "primary_synthesis_succeeded" not in checkpoints
-    assert "repair_pass_started" in checkpoints
-    assert "repair_pass_failed" in checkpoints
-    assert "citation_remap_started" not in checkpoints
-    assert len(adapter.requests) == 2
-
-
-def test_runtime_repair_flow_fails_at_repair_boundary_when_summary_is_missing() -> None:
-    adapter = _ScriptedAdapter(
-        script=(
-            {
-                "findings": [{"text": "Observed fact", "source_refs": ["S1"]}],
-                "inferences": [],
-                "uncertainties": [],
-                "recommendation": None,
-            },
-            {
-                "findings": [{"text": "Observed fact", "source_refs": ["S1"]}],
-                "inferences": [],
-                "uncertainties": [],
-                "recommendation": None,
-            },
-        )
-    )
-    events: list[dict[str, object]] = []
-
-    with pytest.raises(ResearchSynthesisValidationError, match="summary must be a non-empty string"):
-        synthesize_research_with_runtime(
-            research_request=_research_request(),
-            evidence_pack=_evidence_pack(),
-            infrastructure_services=_services(adapter),
-            debug_emitter=events.append,
-        )
-
-    checkpoints = [event["checkpoint"] for event in events]
-    assert "repair_pass_started" in checkpoints
-    assert "repair_pass_failed" in checkpoints
-    assert "repair_pass_succeeded" not in checkpoints
-    assert "citation_remap_started" not in checkpoints
+    assert len(adapter.requests) == 1
 
 
 def _research_request() -> ResearchRequest:
@@ -273,6 +200,20 @@ class _ScriptedAdapter:
         step = self.script[len(self.requests) - 1]
         if isinstance(step, Exception):
             raise step
+        if request_model.response_mode.value == "TEXT":
+            assert isinstance(step, str)
+            return ModelResponse(
+                request_id=request_model.request_id,
+                adapter_id=self.adapter_id,
+                provider_name=self.provider_name,
+                model_name=self.model_name,
+                status=ModelInvocationStatus.COMPLETED,
+                output_text=step,
+                output_json=None,
+                usage=ModelUsage(input_tokens=1, output_tokens=1, total_tokens=2, estimated_cost=0.0, latency_ms=1),
+                warnings=(),
+                raw_response_ref=f"fake://{self.adapter_id}/{request_model.request_id}",
+            )
         assert isinstance(step, dict)
         return ModelResponse(
             request_id=request_model.request_id,
@@ -286,3 +227,35 @@ class _ScriptedAdapter:
             warnings=(),
             raw_response_ref=f"fake://{self.adapter_id}/{request_model.request_id}",
         )
+
+
+def _valid_bounded_text() -> str:
+    return "\n".join(
+        [
+            "SUMMARY:",
+            "Observed summary.",
+            "",
+            "FINDINGS:",
+            "- text: Observed fact",
+            "  cites: S1",
+            "",
+            "INFERENCES:",
+            "- A bounded next step remains supported.",
+            "",
+            "UNCERTAINTIES:",
+            "- No live validation was performed.",
+            "",
+            "RECOMMENDATION:",
+            "Proceed with the bounded path.",
+        ]
+    )
+
+
+def _valid_formatter_json() -> dict[str, object]:
+    return {
+        "summary": "Repaired summary.",
+        "findings": [{"text": "Observed fact", "source_refs": ["S1"]}],
+        "inferences": ["A bounded next step remains supported."],
+        "uncertainties": ["No live validation was performed."],
+        "recommendation": "Proceed with the bounded path.",
+    }

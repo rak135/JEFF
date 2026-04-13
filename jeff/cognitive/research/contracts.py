@@ -8,7 +8,13 @@ from typing import Literal
 from jeff.core.schemas import Scope
 
 from ..types import normalize_text_list, require_text
-from .errors import ResearchProvenanceValidationError
+from .bounded_syntax import (
+    validate_step1_bullet_items,
+    validate_step1_citation_keys,
+    validate_step1_recommendation_text,
+    validate_step1_summary_text,
+)
+from .errors import ResearchProvenanceValidationError, ResearchSynthesisValidationError
 
 ResearchMode = Literal["direct_output", "decision_support"]
 
@@ -198,6 +204,52 @@ class EvidencePack:
             missing = [source_id for source_id in evidence_item.source_refs if source_id not in source_ids]
             if missing:
                 raise ValueError(f"evidence item references unknown source ids: {missing}")
+
+
+@dataclass(frozen=True, slots=True)
+class Step1BoundedFinding:
+    text: str
+    citation_keys: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "text", require_text(self.text, field_name="text"))
+        try:
+            normalized_citation_keys = validate_step1_citation_keys(
+                self.citation_keys,
+                field_name="citation_keys",
+            )
+        except ResearchSynthesisValidationError as exc:
+            raise ValueError(str(exc)) from exc
+        object.__setattr__(self, "citation_keys", normalized_citation_keys)
+
+
+@dataclass(frozen=True, slots=True)
+class Step1BoundedArtifact:
+    summary: str
+    findings: tuple[Step1BoundedFinding, ...]
+    inferences: tuple[str, ...]
+    uncertainties: tuple[str, ...]
+    recommendation: str | None
+
+    def __post_init__(self) -> None:
+        try:
+            normalized_summary = validate_step1_summary_text(self.summary)
+            normalized_inferences = validate_step1_bullet_items(self.inferences, section_name="inferences")
+            normalized_uncertainties = validate_step1_bullet_items(self.uncertainties, section_name="uncertainties")
+            normalized_recommendation = validate_step1_recommendation_text(self.recommendation)
+        except ResearchSynthesisValidationError as exc:
+            raise ValueError(str(exc)) from exc
+
+        if not self.findings:
+            raise ValueError("step1 bounded artifact requires at least one finding")
+        for finding in self.findings:
+            if not isinstance(finding, Step1BoundedFinding):
+                raise ValueError("step1 bounded artifact findings must be Step1BoundedFinding instances")
+
+        object.__setattr__(self, "summary", normalized_summary)
+        object.__setattr__(self, "inferences", normalized_inferences)
+        object.__setattr__(self, "uncertainties", normalized_uncertainties)
+        object.__setattr__(self, "recommendation", normalized_recommendation)
 
 
 @dataclass(frozen=True, slots=True)

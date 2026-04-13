@@ -34,26 +34,16 @@ def test_model_facing_sources_use_request_local_citation_keys() -> None:
 
 
 def test_model_request_uses_citation_keys_without_leaking_raw_source_ids() -> None:
-    request = build_research_model_request(_research_request(), _evidence_pack(), adapter_id="fake-json")
+    request = build_research_model_request(_research_request(), _evidence_pack(), adapter_id="fake-text")
 
     assert "ALLOWED_CITATION_KEYS: S1, S2" in request.prompt
     assert "E1|refs=S1|text=The bounded rollout remains stable." in request.prompt
     assert "E2|refs=S2|text=The local plan keeps scope narrow." in request.prompt
     assert "web-359eb9e7c0c0" not in request.prompt
     assert "document-a81f1c0a" not in request.prompt
-    assert "web-359eb9e7c0c0" not in json.dumps(request.json_schema)
-    assert "document-a81f1c0a" not in json.dumps(request.json_schema)
+    assert request.json_schema is None
     assert "web-359eb9e7c0c0" not in json.dumps(request.metadata)
     assert "document-a81f1c0a" not in json.dumps(request.metadata)
-
-
-def test_dynamic_allowed_key_contract_is_generated_correctly() -> None:
-    request = build_research_model_request(_research_request(), _evidence_pack(), adapter_id="fake-json")
-
-    source_refs_schema = request.json_schema["properties"]["findings"]["items"]["properties"]["source_refs"]
-
-    assert source_refs_schema["minItems"] == 1
-    assert source_refs_schema["items"]["enum"] == ["S1", "S2"]
 
 
 def test_valid_returned_citation_keys_remap_back_to_real_source_ids() -> None:
@@ -61,17 +51,8 @@ def test_valid_returned_citation_keys_remap_back_to_real_source_ids() -> None:
         research_request=_research_request(),
         evidence_pack=_evidence_pack(),
         adapter=FakeModelAdapter(
-            adapter_id="fake-json",
-            default_json_response={
-                "summary": "The prepared evidence supports the bounded option.",
-                "findings": [
-                    {"text": "The web article supports the bounded option.", "source_refs": ["S1"]},
-                    {"text": "The document note supports the same path.", "source_refs": ["S2"]},
-                ],
-                "inferences": ["Both sources point toward the narrow rollout."],
-                "uncertainties": ["No live validation was performed."],
-                "recommendation": "Proceed with the bounded path.",
-            },
+            adapter_id="fake-text",
+            default_text_response=_bounded_text("S1", "S2"),
         ),
     )
 
@@ -86,14 +67,8 @@ def test_unknown_returned_citation_keys_fail_closed() -> None:
             research_request=_research_request(),
             evidence_pack=_evidence_pack(),
             adapter=FakeModelAdapter(
-                adapter_id="fake-json",
-                default_json_response={
-                    "summary": "This should fail closed.",
-                    "findings": [{"text": "Unsupported claim", "source_refs": ["S9"]}],
-                    "inferences": [],
-                    "uncertainties": [],
-                    "recommendation": None,
-                },
+                adapter_id="fake-text",
+                default_text_response=_bounded_text("S9", "S2"),
             ),
         )
 
@@ -103,20 +78,47 @@ def test_final_artifact_keeps_real_internal_source_ids_after_remap() -> None:
         research_request=_research_request(),
         evidence_pack=_evidence_pack(),
         adapter=FakeModelAdapter(
-            adapter_id="fake-json",
-            default_json_response={
-                "summary": "The prepared evidence supports the bounded option.",
-                "findings": [{"text": "The web article supports the bounded option.", "source_refs": ["S1"]}],
-                "inferences": [],
-                "uncertainties": [],
-                "recommendation": None,
-            },
+            adapter_id="fake-text",
+            default_text_response=_bounded_text("S1"),
         ),
     )
 
     assert artifact.findings[0].source_refs == ("web-359eb9e7c0c0",)
     assert artifact.source_ids == ("web-359eb9e7c0c0",)
     assert artifact.source_ids != ("S1",)
+
+
+def _bounded_text(first_citation: str, second_citation: str | None = None) -> str:
+    findings = [
+        "- text: The web article supports the bounded option.",
+        f"  cites: {first_citation}",
+    ]
+    if second_citation is not None:
+        findings.extend(
+            [
+                "- text: The document note supports the same path.",
+                f"  cites: {second_citation}",
+            ]
+        )
+
+    return "\n".join(
+        [
+            "SUMMARY:",
+            "The prepared evidence supports the bounded option.",
+            "",
+            "FINDINGS:",
+            *findings,
+            "",
+            "INFERENCES:",
+            "- Both sources point toward the narrow rollout.",
+            "",
+            "UNCERTAINTIES:",
+            "- No live validation was performed.",
+            "",
+            "RECOMMENDATION:",
+            "Proceed with the bounded path.",
+        ]
+    )
 
 
 def _research_request() -> ResearchRequest:

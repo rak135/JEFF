@@ -8,6 +8,26 @@ from typing import Any
 
 ResearchDebugEmitter = Callable[[dict[str, object]], None]
 
+RESEARCH_DEBUG_CHECKPOINTS: tuple[str, ...] = (
+    "source_key_map_built",
+    "content_generation_started",
+    "content_generation_succeeded",
+    "content_generation_failed",
+    "syntax_precheck_failed",
+    "deterministic_transform_started",
+    "deterministic_transform_succeeded",
+    "deterministic_transform_failed",
+    "formatter_fallback_started",
+    "formatter_fallback_succeeded",
+    "formatter_fallback_failed",
+    "citation_remap_started",
+    "citation_remap_succeeded",
+    "citation_remap_failed",
+    "provenance_validation_started",
+    "provenance_validation_succeeded",
+    "provenance_validation_failed",
+)
+
 
 def emit_research_debug_event(
     emitter: ResearchDebugEmitter | None,

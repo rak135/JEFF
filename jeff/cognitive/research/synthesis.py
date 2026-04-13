@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from collections.abc import Callable
 from typing import Any
 
 from jeff.infrastructure import (
@@ -22,9 +21,14 @@ from jeff.infrastructure import (
 )
 
 from ..types import require_text
+from .bounded_syntax import STEP1_BOUNDED_SYNTAX_DESCRIPTION, validate_step1_bounded_text
 from .contracts import EvidencePack, ResearchArtifact, ResearchFinding, ResearchRequest, validate_research_provenance
+from .deterministic_transformer import transform_step1_bounded_text_to_candidate_payload
 from .debug import ResearchDebugEmitter, emit_research_debug_event
 from .errors import ResearchSynthesisError, ResearchSynthesisRuntimeError, ResearchSynthesisValidationError
+from .fallback_policy import decide_formatter_fallback
+from .formatter import build_research_formatter_model_request, validate_research_formatter_output
+from .validators import build_candidate_research_json_schema
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,7 +53,6 @@ def build_research_model_request(
     source_id_to_citation_key = {source_id: citation_key for citation_key, source_id in citation_key_map.items()}
     allowed_citation_keys = tuple(citation_key_map.keys())
     model_facing_sources = build_model_facing_sources(evidence_pack, citation_key_map)
-    json_schema = _build_research_synthesis_schema(allowed_citation_keys)
     prompt = _build_primary_synthesis_prompt(
         request=request,
         evidence_pack=evidence_pack,
@@ -66,15 +69,15 @@ def build_research_model_request(
         purpose="research_synthesis",
         prompt=prompt,
         system_instructions=_primary_synthesis_system_instructions(),
-        response_mode=ModelResponseMode.JSON,
-        json_schema=json_schema,
+        response_mode=ModelResponseMode.TEXT,
+        json_schema=None,
         timeout_seconds=None,
         max_output_tokens=1200,
         reasoning_effort="medium",
         metadata={
             "research_question": request.question,
             "source_mode": request.source_mode,
-            "expected_output_shape": "research_artifact_v1",
+            "expected_output_shape": "step1_bounded_text_v1",
             "adapter_id": adapter_id,
             "citation_keys": list(allowed_citation_keys),
             "source_count": len(evidence_pack.sources),
@@ -92,7 +95,7 @@ def synthesize_research(
     if not evidence_pack.evidence_items:
         raise ResearchSynthesisValidationError("research synthesis requires at least one evidence item")
 
-    effective_repair_adapter = repair_adapter or adapter
+    effective_formatter_adapter = repair_adapter or adapter
     citation_key_map = build_citation_key_map(evidence_pack)
     emit_research_debug_event(
         debug_emitter,
@@ -102,11 +105,11 @@ def synthesize_research(
         source_count=len(evidence_pack.sources),
     )
     model_request = build_research_model_request(research_request, evidence_pack, adapter_id=adapter.adapter_id)
-    payload = _invoke_synthesis_payload_with_optional_repair(
+    payload = _invoke_step1_bounded_text_and_transform(
         research_request=research_request,
         evidence_pack=evidence_pack,
         adapter=adapter,
-        repair_adapter=effective_repair_adapter,
+        formatter_adapter=effective_formatter_adapter,
         model_request=model_request,
         debug_emitter=debug_emitter,
     )
@@ -165,7 +168,7 @@ def synthesize_research_with_runtime(
     except ModelAdapterError as exc:
         raise _runtime_error_from_exception(exc, adapter=None, adapter_id_hint=adapter_id) from exc
     try:
-        repair_adapter = infrastructure_services.get_adapter_for_purpose(
+        formatter_adapter = infrastructure_services.get_adapter_for_purpose(
             "research_repair",
             fallback_adapter_id=adapter.adapter_id,
         )
@@ -179,7 +182,7 @@ def synthesize_research_with_runtime(
         research_request=research_request,
         evidence_pack=evidence_pack,
         adapter=adapter,
-        repair_adapter=repair_adapter,
+        repair_adapter=formatter_adapter,
         debug_emitter=debug_emitter,
     )
 
@@ -257,18 +260,18 @@ def _research_artifact_from_output(
     return artifact
 
 
-def _invoke_synthesis_payload_with_optional_repair(
+def _invoke_step1_bounded_text_and_transform(
     *,
     research_request: ResearchRequest,
     evidence_pack: EvidencePack,
     adapter: ModelAdapter,
-    repair_adapter: ModelAdapter,
+    formatter_adapter: ModelAdapter,
     model_request: ModelRequest,
     debug_emitter: ResearchDebugEmitter | None = None,
 ) -> dict[str, Any]:
     emit_research_debug_event(
         debug_emitter,
-        "primary_synthesis_started",
+        "content_generation_started",
         adapter_id=adapter.adapter_id,
         provider_name=getattr(adapter, "provider_name", None),
         model_name=getattr(adapter, "model_name", None),
@@ -279,7 +282,7 @@ def _invoke_synthesis_payload_with_optional_repair(
     except ModelInvocationError as exc:
         emit_research_debug_event(
             debug_emitter,
-            "primary_synthesis_failed",
+            "content_generation_failed",
             failure_class=_failure_class_from_exception(exc),
             adapter_id=adapter.adapter_id,
             provider_name=getattr(adapter, "provider_name", None),
@@ -287,57 +290,81 @@ def _invoke_synthesis_payload_with_optional_repair(
             reason=_bounded_debug_text(str(exc)),
             raw_output_preview=_malformed_output_preview(exc),
         )
-        if not isinstance(exc, ModelMalformedOutputError):
-            raise _runtime_error_from_exception(exc, adapter=adapter) from exc
-        repaired_payload = _attempt_output_repair(
-            research_request=research_request,
-            evidence_pack=evidence_pack,
-            repair_adapter=repair_adapter,
-            model_request=model_request,
-            output_to_repair=getattr(exc, "raw_output", None),
-            repair_target_failure_class="malformed_output",
-            debug_emitter=debug_emitter,
-        )
-        if repaired_payload is None:
-            raise _runtime_error_from_exception(exc, adapter=adapter) from exc
-        return repaired_payload
+        raise _runtime_error_from_exception(exc, adapter=adapter) from exc
 
-    if response.output_json is None:
-        raise ResearchSynthesisValidationError("research synthesis requires JSON output")
     try:
-        validated_payload = _validate_payload_for_progression(response.output_json)
-    except ResearchSynthesisValidationError as exc:
+        if response.output_text is None:
+            raise ResearchSynthesisValidationError("research synthesis requires text output")
+        bounded_text = require_text(response.output_text, field_name="output_text")
+    except (TypeError, ValueError, ResearchSynthesisValidationError) as exc:
         emit_research_debug_event(
             debug_emitter,
-            "primary_synthesis_failed",
-            failure_class="schema_incomplete",
+            "content_generation_failed",
+            failure_class="validation_error",
             adapter_id=adapter.adapter_id,
             provider_name=getattr(adapter, "provider_name", None),
             model_name=getattr(adapter, "model_name", None),
             reason=_bounded_debug_text(str(exc)),
             raw_output_preview=_response_output_preview(response),
         )
-        repaired_payload = _attempt_output_repair(
-            research_request=research_request,
-            evidence_pack=evidence_pack,
-            repair_adapter=repair_adapter,
-            model_request=model_request,
-            output_to_repair=_serialize_output_json_for_repair(response.output_json),
-            repair_target_failure_class="schema_incomplete",
-            debug_emitter=debug_emitter,
-        )
-        if repaired_payload is None:
-            raise
-        return repaired_payload
+        raise ResearchSynthesisValidationError(str(exc)) from exc
+
     emit_research_debug_event(
         debug_emitter,
-        "primary_synthesis_succeeded",
+        "content_generation_succeeded",
         adapter_id=adapter.adapter_id,
         provider_name=getattr(adapter, "provider_name", None),
         model_name=getattr(adapter, "model_name", None),
         raw_output_preview=_response_output_preview(response),
     )
-    return validated_payload
+
+    try:
+        validate_step1_bounded_text(bounded_text)
+    except ResearchSynthesisValidationError as exc:
+        emit_research_debug_event(
+            debug_emitter,
+            "syntax_precheck_failed",
+            reason=_bounded_debug_text(str(exc)),
+            raw_output_preview=_bounded_preview(bounded_text),
+        )
+        raise
+
+    emit_research_debug_event(
+        debug_emitter,
+        "deterministic_transform_started",
+        raw_output_preview=_bounded_preview(bounded_text),
+    )
+    try:
+        payload = transform_step1_bounded_text_to_candidate_payload(bounded_text)
+    except ResearchSynthesisValidationError as exc:
+        emit_research_debug_event(
+            debug_emitter,
+            "deterministic_transform_failed",
+            reason=_bounded_debug_text(str(exc)),
+            raw_output_preview=_bounded_preview(bounded_text),
+        )
+        fallback_decision = decide_formatter_fallback(
+            bounded_text=bounded_text,
+            transform_error=exc,
+        )
+        if not fallback_decision.allowed:
+            raise
+        return _attempt_formatter_fallback(
+            research_request=research_request,
+            evidence_pack=evidence_pack,
+            formatter_adapter=formatter_adapter,
+            model_request=model_request,
+            bounded_text=bounded_text,
+            transform_failure_reason=fallback_decision.reason,
+            debug_emitter=debug_emitter,
+        )
+    emit_research_debug_event(
+        debug_emitter,
+        "deterministic_transform_succeeded",
+        finding_count=len(payload.get("findings", [])),
+        returned_citation_refs=_returned_citation_refs_preview(payload.get("findings")),
+    )
+    return payload
 
 
 def _required_string(payload: dict[str, Any], field_name: str) -> str:
@@ -398,34 +425,7 @@ def build_model_facing_sources(
 
 
 def _build_research_synthesis_schema(allowed_citation_keys: tuple[str, ...]) -> dict[str, Any]:
-    return {
-        "type": "object",
-        "properties": {
-            "summary": {"type": "string"},
-            "findings": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "text": {"type": "string"},
-                        "source_refs": {
-                            "type": "array",
-                            "items": {"type": "string", "enum": list(allowed_citation_keys)},
-                            "minItems": 1,
-                        },
-                    },
-                    "required": ["text", "source_refs"],
-                    "additionalProperties": False,
-                },
-                "minItems": 1,
-            },
-            "inferences": {"type": "array", "items": {"type": "string"}},
-            "uncertainties": {"type": "array", "items": {"type": "string"}},
-            "recommendation": {"type": ["string", "null"]},
-        },
-        "required": ["summary", "findings", "inferences", "uncertainties", "recommendation"],
-        "additionalProperties": False,
-    }
+    return build_candidate_research_json_schema(allowed_citation_keys)
 
 
 def build_research_repair_model_request(
@@ -436,18 +436,19 @@ def build_research_repair_model_request(
     primary_request: ModelRequest,
     adapter_id: str | None = None,
 ) -> ModelRequest:
+    # Temporary compatibility bridge for callers/tests that still use the old
+    # repair helper name while Step 3 formatter fallback is settling.
     if request.question != evidence_pack.question:
         raise ValueError("research request question must match evidence pack question")
-    if primary_request.json_schema is None:
-        raise ValueError("research repair request requires the primary JSON schema")
 
     citation_key_map = build_citation_key_map(evidence_pack)
     allowed_citation_keys = tuple(citation_key_map.keys())
     sanitized_output = _sanitize_repair_input(malformed_output, citation_key_map)
+    json_schema = primary_request.json_schema or _build_research_synthesis_schema(allowed_citation_keys)
     prompt = _build_repair_prompt(
         request=request,
         allowed_citation_keys=allowed_citation_keys,
-        json_schema=primary_request.json_schema,
+        json_schema=json_schema,
         sanitized_output=sanitized_output,
     )
 
@@ -460,7 +461,7 @@ def build_research_repair_model_request(
         prompt=prompt,
         system_instructions=_repair_system_instructions(),
         response_mode=ModelResponseMode.JSON,
-        json_schema=primary_request.json_schema,
+        json_schema=json_schema,
         timeout_seconds=primary_request.timeout_seconds,
         max_output_tokens=primary_request.max_output_tokens,
         reasoning_effort="low",
@@ -477,106 +478,98 @@ def build_research_repair_model_request(
     )
 
 
-def _attempt_output_repair(
+def _attempt_formatter_fallback(
     *,
     research_request: ResearchRequest,
     evidence_pack: EvidencePack,
-    repair_adapter: ModelAdapter,
+    formatter_adapter: ModelAdapter,
     model_request: ModelRequest,
-    output_to_repair: str | None,
-    repair_target_failure_class: str,
+    bounded_text: str,
+    transform_failure_reason: str,
     debug_emitter: ResearchDebugEmitter | None = None,
-) -> dict[str, Any] | None:
-    if output_to_repair is None:
-        emit_research_debug_event(
-            debug_emitter,
-            "repair_pass_failed",
-            failure_class=repair_target_failure_class,
-            adapter_id=repair_adapter.adapter_id,
-            provider_name=getattr(repair_adapter, "provider_name", None),
-            model_name=getattr(repair_adapter, "model_name", None),
-            reason="no repair input available for invalid output",
-        )
-        return None
-
-    repair_input = _sanitize_repair_input(output_to_repair, build_citation_key_map(evidence_pack))
+) -> dict[str, Any]:
     emit_research_debug_event(
         debug_emitter,
-        "repair_pass_started",
-        adapter_id=repair_adapter.adapter_id,
-        provider_name=getattr(repair_adapter, "provider_name", None),
-        model_name=getattr(repair_adapter, "model_name", None),
-        repair_target_failure_class=repair_target_failure_class,
-        allowed_citation_keys=list(build_citation_key_map(evidence_pack).keys()),
-        repair_target_preview=_bounded_preview(output_to_repair),
-        repair_input_preview=_bounded_preview(repair_input),
+        "formatter_fallback_started",
+        adapter_id=formatter_adapter.adapter_id,
+        provider_name=getattr(formatter_adapter, "provider_name", None),
+        model_name=getattr(formatter_adapter, "model_name", None),
+        failure_class="structural_transform_failure",
+        reason=_bounded_debug_text(transform_failure_reason),
+        formatter_input_preview=_bounded_preview(bounded_text),
     )
-    repair_request = build_research_repair_model_request(
+    formatter_request = build_research_formatter_model_request(
         research_request,
         evidence_pack,
-        output_to_repair,
+        bounded_text,
+        transform_failure_reason=transform_failure_reason,
         primary_request=model_request,
-        adapter_id=repair_adapter.adapter_id,
+        adapter_id=formatter_adapter.adapter_id,
     )
 
     try:
-        repair_response = repair_adapter.invoke(repair_request)
+        formatter_response = formatter_adapter.invoke(formatter_request)
     except ModelInvocationError as exc:
         emit_research_debug_event(
             debug_emitter,
-            "repair_pass_failed",
+            "formatter_fallback_failed",
             failure_class=_failure_class_from_exception(exc),
-            adapter_id=repair_adapter.adapter_id,
-            provider_name=getattr(repair_adapter, "provider_name", None),
-            model_name=getattr(repair_adapter, "model_name", None),
+            adapter_id=formatter_adapter.adapter_id,
+            provider_name=getattr(formatter_adapter, "provider_name", None),
+            model_name=getattr(formatter_adapter, "model_name", None),
             reason=_bounded_debug_text(str(exc)),
             raw_output_preview=_malformed_output_preview(exc),
         )
-        return None
+        raise _runtime_error_from_exception(exc, adapter=formatter_adapter) from exc
 
-    if repair_response.output_json is None:
+    if formatter_response.output_json is None:
         emit_research_debug_event(
             debug_emitter,
-            "repair_pass_failed",
+            "formatter_fallback_failed",
             failure_class="validation_error",
-            adapter_id=repair_adapter.adapter_id,
-            provider_name=getattr(repair_adapter, "provider_name", None),
-            model_name=getattr(repair_adapter, "model_name", None),
-            reason="repair pass returned no JSON output",
+            adapter_id=formatter_adapter.adapter_id,
+            provider_name=getattr(formatter_adapter, "provider_name", None),
+            model_name=getattr(formatter_adapter, "model_name", None),
+            reason="formatter fallback returned no JSON output",
+            raw_output_preview=_response_output_preview(formatter_response),
         )
-        return None
+        raise ResearchSynthesisValidationError("formatter fallback requires JSON output")
+
     try:
-        repaired_payload = _validate_payload_for_progression(repair_response.output_json)
+        validated_payload = validate_research_formatter_output(formatter_response.output_json)
     except ResearchSynthesisValidationError as exc:
         emit_research_debug_event(
             debug_emitter,
-            "repair_pass_failed",
-            failure_class="schema_incomplete",
-            adapter_id=repair_adapter.adapter_id,
-            provider_name=getattr(repair_adapter, "provider_name", None),
-            model_name=getattr(repair_adapter, "model_name", None),
+            "formatter_fallback_failed",
+            failure_class="validation_error",
+            adapter_id=formatter_adapter.adapter_id,
+            provider_name=getattr(formatter_adapter, "provider_name", None),
+            model_name=getattr(formatter_adapter, "model_name", None),
             reason=_bounded_debug_text(str(exc)),
-            raw_output_preview=_response_output_preview(repair_response),
+            raw_output_preview=_response_output_preview(formatter_response),
         )
-        return None
+        raise
+
     emit_research_debug_event(
         debug_emitter,
-        "repair_pass_succeeded",
-        adapter_id=repair_adapter.adapter_id,
-        provider_name=getattr(repair_adapter, "provider_name", None),
-        model_name=getattr(repair_adapter, "model_name", None),
-        raw_output_preview=_response_output_preview(repair_response),
+        "formatter_fallback_succeeded",
+        adapter_id=formatter_adapter.adapter_id,
+        provider_name=getattr(formatter_adapter, "provider_name", None),
+        model_name=getattr(formatter_adapter, "model_name", None),
+        raw_output_preview=_response_output_preview(formatter_response),
+        returned_citation_refs=_returned_citation_refs_preview(validated_payload.get("findings")),
     )
-    return repaired_payload
+    return validated_payload
 
 
 def _primary_synthesis_system_instructions() -> str:
     return (
         "Use only the provided evidence. "
-        "Return exactly one JSON object that matches json_schema. "
+        "Return bounded plain text in the declared section syntax. "
         "No markdown, no code fences, no commentary. "
         "Do not invent facts, sources, or certainty. "
-        "Use only the allowed citation keys in findings.source_refs."
+        "Use only the allowed citation keys in FINDINGS cites lines. "
+        "Do not return JSON."
     )
 
 
@@ -618,12 +611,18 @@ def _build_primary_synthesis_prompt(
     return "\n".join(
         [
             "TASK: bounded research synthesis",
-            "Output exactly one JSON object matching json_schema.",
+            "Output bounded plain text using the exact section syntax below.",
             "Use only provided evidence and allowed citation keys.",
             "Keep findings, inferences, and uncertainties distinct.",
             "Do not output markdown, code fences, or extra prose.",
+            "Each required section must appear exactly once in canonical order.",
+            "Each finding must use paired '- text:' and '  cites:' lines.",
+            "INFERENCES and UNCERTAINTIES must each contain at least one bullet line.",
+            "RECOMMENDATION must be plain text or NONE.",
             f"QUESTION: {request.question}",
             f"ALLOWED_CITATION_KEYS: {', '.join(allowed_citation_keys)}",
+            "REQUIRED_BOUNDED_SYNTAX:",
+            STEP1_BOUNDED_SYNTAX_DESCRIPTION,
             "CONSTRAINTS:",
             *constraint_lines,
             "SOURCES:",
@@ -703,10 +702,6 @@ def _validate_payload_for_progression(payload: Any) -> dict[str, Any]:
         return payload
     except (TypeError, ValueError) as exc:
         raise ResearchSynthesisValidationError(str(exc)) from exc
-
-
-def _serialize_output_json_for_repair(payload: dict[str, Any]) -> str:
-    return json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
 
 
 def _rewrite_source_identifiers(text: str, source_id_to_citation_key: dict[str, str]) -> str:
