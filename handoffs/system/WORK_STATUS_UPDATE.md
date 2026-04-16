@@ -895,3 +895,146 @@ Next steps: Phase 02 implementation can begin (SearXNG, Trafilatura, etc.) using
   - tests/unit/cognitive/test_research_synthesis_runtime_errors.py
   - tests/integration/test_research_synthesis_repair_flow.py
   - tests/integration/test_cli_research_debug_stream.py
+
+## 2026-04-13 19:36 — Added Step 1 bounded syntax contract foundation
+
+- Scope: `jeff.cognitive.research` Slice 1 contract-only transition work
+- Done:
+  - added `Step1BoundedFinding` and `Step1BoundedArtifact` contract types in research contracts
+  - added `bounded_syntax.py` with canonical Step 1 section constants and fail-closed structural validators
+  - added focused unit tests for valid structure, malformed sections, citation-key shape, duplicate citations, empty required content, and contract boundaries
+  - confirmed the live synthesis request remains the current JSON-first runtime path
+- Validation: passed `pytest tests/unit/cognitive/test_research_bounded_syntax.py tests/unit/cognitive/test_research_synthesis.py tests/unit/cognitive/test_research_synthesis_citation_keys.py tests/unit/cognitive/test_research_public_surface.py`
+- Current state: Step 1 contract foundations exist locally in research without switching the active synthesis flow
+- Next step: implement Slice 2 deterministic bounded-text transformer without changing downstream remap/provenance behavior
+- Files:
+  - jeff/cognitive/research/contracts.py
+  - jeff/cognitive/research/bounded_syntax.py
+  - tests/unit/cognitive/test_research_bounded_syntax.py
+
+## 2026-04-13 19:43 — Added deterministic Step 2 bounded-text transformer
+
+- Scope: `jeff.cognitive.research` Slice 2 deterministic transformation layer
+- Done:
+  - added `deterministic_transformer.py` to parse Step 1 bounded text into a citation-key candidate research payload
+  - added `validators.py` for fail-closed candidate payload validation with exact field and citation-key checks
+  - added focused unit tests for valid transform, missing sections, malformed findings, malformed citation keys, duplicate citations, ambiguous structure, and non-invention boundaries
+  - confirmed the live synthesis request path remains the current JSON-first runtime
+- Validation: passed `pytest tests/unit/cognitive/test_research_deterministic_transformer.py tests/unit/cognitive/test_research_bounded_syntax.py tests/unit/cognitive/test_research_synthesis.py tests/unit/cognitive/test_research_synthesis_citation_keys.py tests/unit/cognitive/test_research_public_surface.py`
+- Current state: Step 2 deterministic parsing and candidate-payload validation exist locally without changing the active synthesis flow
+- Next step: wire Step 1 and Step 2 into synthesis as the primary path in Slice 3
+- Files:
+  - jeff/cognitive/research/deterministic_transformer.py
+  - jeff/cognitive/research/validators.py
+  - tests/unit/cognitive/test_research_deterministic_transformer.py
+
+## 2026-04-13 19:56 — Wired Step 1 and Step 2 into live research synthesis
+
+- Scope: `jeff.cognitive.research` Slice 3 primary-path transition
+- Done:
+  - switched `research_synthesis` requests from JSON mode to bounded Step 1 text mode
+  - wired live synthesis through syntax precheck and deterministic Step 2 transform before existing citation remap/provenance validation
+  - updated research debug checkpoints to truthful content-generation and deterministic-transform labels
+  - updated focused unit and runtime-integration tests for bounded-text-first synthesis and no live repair fallback
+- Validation: passed `pytest tests/unit/cognitive/test_research_bounded_syntax.py tests/unit/cognitive/test_research_deterministic_transformer.py tests/unit/cognitive/test_research_synthesis.py tests/unit/cognitive/test_research_synthesis_citation_keys.py tests/unit/cognitive/test_research_synthesis_runtime_errors.py tests/unit/cognitive/test_research_synthesis_repair_pass.py tests/unit/cognitive/test_research_public_surface.py tests/unit/interface/test_research_debug_mode.py tests/integration/test_research_synthesis_with_runtime.py`
+- Current state: live research synthesis now uses Step 1 bounded text and Step 2 deterministic transform while downstream remap/provenance behavior stays unchanged
+- Next step: add Slice 4 formatter fallback without changing downstream remap/provenance semantics
+- Files:
+  - jeff/cognitive/research/synthesis.py
+  - jeff/cognitive/research/debug.py
+  - tests/unit/cognitive/test_research_synthesis.py
+  - tests/unit/interface/test_research_debug_mode.py
+
+## 2026-04-13 20:07 — Added Step 3 formatter fallback bridge
+
+- Scope: `jeff.cognitive.research` Slice 4 formatter fallback wiring
+- Done:
+  - added `formatter.py` for Step 3 formatter request building and hard output validation
+  - added `fallback_policy.py` for explicit formatter eligibility after deterministic-transform failure
+  - wired formatter fallback into live synthesis after Step 2 failure while keeping downstream remap/provenance unchanged
+  - updated debug checkpoints and focused unit/integration tests for truthful formatter fallback behavior
+- Validation: passed `pytest tests/unit/cognitive/test_research_bounded_syntax.py tests/unit/cognitive/test_research_deterministic_transformer.py tests/unit/cognitive/test_research_synthesis.py tests/unit/cognitive/test_research_synthesis_citation_keys.py tests/unit/cognitive/test_research_synthesis_runtime_errors.py tests/unit/cognitive/test_research_synthesis_repair_pass.py tests/unit/cognitive/test_research_public_surface.py tests/unit/interface/test_research_debug_mode.py tests/integration/test_research_synthesis_with_runtime.py tests/integration/test_research_synthesis_repair_flow.py tests/integration/test_cli_research_debug_stream.py`
+- Current state: research now runs Step 1, Step 2, and Step 3 fallback with the existing `research_repair` runtime purpose used explicitly as a temporary formatter bridge
+- Next step: clean up temporary repair naming and compatibility surfaces after the formatter bridge is stable
+- Files:
+  - jeff/cognitive/research/formatter.py
+  - jeff/cognitive/research/fallback_policy.py
+  - jeff/cognitive/research/synthesis.py
+  - tests/integration/test_research_synthesis_repair_flow.py
+
+## 2026-04-13 20:48 — Completed 3-step research transition summary
+
+- Scope: `jeff.cognitive.research` bounded-text-first transition completion summary
+- Done:
+  - completed Slice 1 bounded syntax foundations and Slice 2 deterministic transformer/validator work
+  - switched the live primary path to Step 1 bounded text -> Step 2 deterministic transform with truthful debug checkpoints
+  - wired Step 3 formatter fallback only after Step 2 failure, with bounded text passed to the formatter and downstream remap/provenance/persistence/projection/memory-handoff semantics left unchanged
+  - updated stale research integration tests to bounded-text-first assumptions and refreshed `jeff/cognitive/research/HANDOFF.md` to the live 3-step state
+  - cleaned active repair-era naming to formatter-fallback wording while intentionally keeping `research_repair` / `research_synthesis_repair` as temporary bridge names and `legacy.py` as a compatibility surface
+- Validation: passed focused 3-step research unit/integration sweep (`94 passed`); current research handoff reflects the verified live CLI/runtime path
+- Current state: research now runs bounded-text-first with deterministic primary normalization and formatter fallback only after Step 2 failure while downstream semantics remain unchanged
+- Next step: retire remaining bridge surfaces only after runtime naming and real callers move off `research_repair` and `legacy.py`
+- Files:
+  - jeff/cognitive/research/bounded_syntax.py
+  - jeff/cognitive/research/deterministic_transformer.py
+  - jeff/cognitive/research/formatter.py
+  - jeff/cognitive/research/synthesis.py
+  - jeff/cognitive/research/HANDOFF.md
+  - tests/fixtures/research.py
+
+## 2026-04-15 09:00 — Infrastructure Slice 6: vocabulary modules added
+
+- Scope: jeff/infrastructure vocabulary layer
+- Done:
+  - added `purposes.py` with `Purpose` enum (RESEARCH, RESEARCH_REPAIR, PROPOSAL, PLANNING, EVALUATION) — values match existing PurposeOverrides string keys
+  - added `output_strategies.py` with `OutputStrategy` enum (PLAIN_TEXT, BOUNDED_TEXT_THEN_PARSE, BOUNDED_TEXT_THEN_FORMATTER)
+  - added `capability_profiles.py` with `CapabilityProfile` dataclass and `CapabilityProfileRegistry`
+  - exported all three from `jeff/infrastructure/__init__.py`
+  - added 20 focused unit tests across three new test files (all pass)
+- Validation: 63/63 infrastructure unit tests pass; no regressions
+- Current state: vocabulary modules exist, are reusable, contain no research/domain semantics; research runtime behavior unchanged; config.py and runtime.py untouched
+- Next step: Slice 7 — wire vocabulary into runtime routing or begin Proposal/Evaluation domain layer
+- Files:
+  - jeff/infrastructure/purposes.py (new)
+  - jeff/infrastructure/output_strategies.py (new)
+  - jeff/infrastructure/capability_profiles.py (new)
+  - jeff/infrastructure/__init__.py (4 lines added)
+  - tests/unit/infrastructure/test_purposes.py (new)
+  - tests/unit/infrastructure/test_output_strategies.py (new)
+  - tests/unit/infrastructure/test_capability_profiles.py (new)
+
+## 2026-04-15 09:30 — Infrastructure Slice 7: contract_runtime added
+
+- Scope: jeff/infrastructure contract runtime surface
+- Done:
+  - added `contract_runtime.py` with `ContractCallRequest` (validated descriptor) and `ContractRuntime` (thin wrapper over InfrastructureServices)
+  - `ContractRuntime.invoke` routes by purpose, maps strategy to response mode, auto-generates request_id when absent
+  - `ContractRuntime.invoke_with_adapter` added for explicit adapter selection (repair/retry paths)
+  - added `contract_runtime` property to `InfrastructureServices` for convenient access
+  - exported `ContractCallRequest` and `ContractRuntime` from `jeff/infrastructure/__init__.py`
+  - added 18 focused unit tests; 81/81 infrastructure tests pass
+- Validation: full infrastructure unit test suite passed, no regressions
+- Current state: Infrastructure now has a thin reusable strategy-aware/purpose-aware call entrypoint; existing research flow unchanged; no domain semantics in infrastructure
+- Next step: Research or Proposal layer adopts ContractRuntime, or Slice 8 wires CapabilityProfileRegistry into routing
+- Files:
+  - jeff/infrastructure/contract_runtime.py (new)
+  - jeff/infrastructure/runtime.py (contract_runtime property added)
+  - jeff/infrastructure/__init__.py (2 exports added)
+  - tests/unit/infrastructure/test_contract_runtime.py (new)  
+
+## 2026-04-15 10:10 — Research ContractRuntime adoption: Step 1 and formatter bridge route through InfrastructureServices.contract_runtime
+
+- Scope: jeff/cognitive/research/synthesis.py + jeff/infrastructure/contract_runtime.py
+- Done:
+  - added `ContractRuntime.invoke_with_request(request, adapter_id)` — dispatches a pre-built ModelRequest through the registry; supports both TEXT and JSON mode
+  - added optional `contract_runtime` param to `synthesize_research`, `_invoke_step1_bounded_text_and_transform`, and `_attempt_formatter_fallback`
+  - `synthesize_research_with_runtime` now passes `infrastructure_services.contract_runtime` so both Step 1 and formatter bridge calls route through ContractRuntime
+  - direct adapter path (`synthesize_research(adapter=...)`) unchanged — all existing tests pass with no modification
+  - added 6 focused adoption tests covering `invoke_with_request`, runtime path, formatter fallback, and backward compat
+- Validation: 378 unit+integration tests pass; 10 pre-existing failures confirmed unchanged from baseline
+- Current state: runtime research path dispatches through ContractRuntime; direct adapter path intact; formatter JSON mode supported via invoke_with_request passthrough
+- Next step: consider migrating ContractCallRequest to support reasoning_effort so Step 1 can use invoke() instead of invoke_with_request, or proceed to Proposal/Evaluation adoption
+- Files:
+  - jeff/infrastructure/contract_runtime.py (invoke_with_request added)
+  - jeff/cognitive/research/synthesis.py (contract_runtime threaded through runtime path)
+  - tests/unit/cognitive/test_research_contract_runtime_adoption.py (new, 6 tests)  

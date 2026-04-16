@@ -16,10 +16,11 @@ from jeff.infrastructure import (
     ModelProviderHTTPError,
     ModelRequest,
     ModelResponseMode,
+    OutputStrategy,
     ModelTimeoutError,
     ModelTransportError,
 )
-from jeff.infrastructure.contract_runtime import ContractRuntime
+from jeff.infrastructure.contract_runtime import ContractCallRequest, ContractRuntime
 
 from ..types import require_text
 from .bounded_syntax import STEP1_BOUNDED_SYNTAX_DESCRIPTION, validate_step1_bounded_text
@@ -293,7 +294,26 @@ def _invoke_step1_bounded_text_and_transform(
     )
     try:
         if contract_runtime is not None:
-            response = contract_runtime.invoke_with_request(model_request, adapter_id=adapter.adapter_id)
+            response = contract_runtime.invoke(
+                ContractCallRequest(
+                    purpose=model_request.purpose,
+                    adapter_id=adapter.adapter_id,
+                    routing_purpose="research",
+                    output_strategy=OutputStrategy.BOUNDED_TEXT_THEN_PARSE,
+                    prompt=model_request.prompt,
+                    system_instructions=model_request.system_instructions,
+                    request_id=model_request.request_id,
+                    project_id=model_request.project_id,
+                    work_unit_id=model_request.work_unit_id,
+                    run_id=model_request.run_id,
+                    response_mode=model_request.response_mode,
+                    json_schema=model_request.json_schema,
+                    timeout_seconds=model_request.timeout_seconds,
+                    max_output_tokens=model_request.max_output_tokens,
+                    reasoning_effort=model_request.reasoning_effort,
+                    metadata=model_request.metadata,
+                )
+            )
         else:
             response = adapter.invoke(model_request)
     except ModelInvocationError as exc:

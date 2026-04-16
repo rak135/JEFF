@@ -24,11 +24,13 @@ from jeff.cognitive.research.errors import ResearchSynthesisValidationError
 from jeff.infrastructure import (
     AdapterFactoryConfig,
     AdapterProviderKind,
+    ContractCallRequest,
     ModelAdapterRuntimeConfig,
     ModelInvocationStatus,
     ModelRequest,
     ModelResponse,
     ModelUsage,
+    OutputStrategy,
     PurposeOverrides,
     build_infrastructure_services,
 )
@@ -71,6 +73,51 @@ class _TrackingAdapter:
             model_name=self.model_name,
             status=ModelInvocationStatus.COMPLETED,
             output_text=self.text_response,
+            output_json=None,
+            usage=ModelUsage(input_tokens=1, output_tokens=1, total_tokens=2),
+        )
+
+
+@dataclass
+class _TrackingContractRuntime:
+    step1_text_response: str
+    formatter_json_response: dict | None = None
+    invoke_calls: list[ContractCallRequest] = field(default_factory=list)
+    invoke_with_request_calls: list[tuple[ModelRequest, str]] = field(default_factory=list)
+
+    def invoke(self, call: ContractCallRequest) -> ModelResponse:
+        self.invoke_calls.append(call)
+        return ModelResponse(
+            request_id=call.request_id or "generated-request",
+            adapter_id="runtime-research",
+            provider_name="fake",
+            model_name="runtime-model",
+            status=ModelInvocationStatus.COMPLETED,
+            output_text=self.step1_text_response,
+            output_json=None,
+            usage=ModelUsage(input_tokens=1, output_tokens=1, total_tokens=2),
+        )
+
+    def invoke_with_request(self, request: ModelRequest, *, adapter_id: str) -> ModelResponse:
+        self.invoke_with_request_calls.append((request, adapter_id))
+        if request.response_mode is research_synthesis_module.ModelResponseMode.JSON:
+            return ModelResponse(
+                request_id=request.request_id,
+                adapter_id=adapter_id,
+                provider_name="fake",
+                model_name="formatter-model",
+                status=ModelInvocationStatus.COMPLETED,
+                output_text=None,
+                output_json=dict(self.formatter_json_response or {}),
+                usage=ModelUsage(input_tokens=1, output_tokens=1, total_tokens=2),
+            )
+        return ModelResponse(
+            request_id=request.request_id,
+            adapter_id=adapter_id,
+            provider_name="fake",
+            model_name="runtime-model",
+            status=ModelInvocationStatus.COMPLETED,
+            output_text=self.step1_text_response,
             output_json=None,
             usage=ModelUsage(input_tokens=1, output_tokens=1, total_tokens=2),
         )
@@ -345,3 +392,60 @@ def test_contract_runtime_is_obtained_from_services_in_runtime_path() -> None:
     )
 
     assert isinstance(services.contract_runtime, ContractRuntime)
+
+
+def test_step1_uses_clean_invoke_path_when_contract_runtime_is_supplied() -> None:
+    adapter = _TrackingAdapter(adapter_id="direct-adapter", text_response="should not be used directly")
+    formatter_adapter = _TrackingAdapter(adapter_id="formatter-adapter", json_response=_valid_formatter_json())
+    runtime = _TrackingContractRuntime(step1_text_response=_valid_step1_text())
+
+    artifact = synthesize_research(
+        research_request=_request(),
+        evidence_pack=_evidence_pack(),
+        adapter=adapter,
+        formatter_adapter=formatter_adapter,
+        contract_runtime=runtime,  # type: ignore[arg-type]
+    )
+
+    assert artifact.summary == "Bounded conclusion."
+    assert len(runtime.invoke_calls) == 1
+    assert runtime.invoke_with_request_calls == []
+    assert runtime.invoke_calls[0].purpose == "research_synthesis"
+    assert runtime.invoke_calls[0].adapter_id == "direct-adapter"
+    assert runtime.invoke_calls[0].routing_purpose == "research"
+    assert runtime.invoke_calls[0].output_strategy is OutputStrategy.BOUNDED_TEXT_THEN_PARSE
+    assert runtime.invoke_calls[0].response_mode is research_synthesis_module.ModelResponseMode.TEXT
+    assert runtime.invoke_calls[0].reasoning_effort == "medium"
+    assert adapter.requests == []
+
+
+def test_step3_intentionally_stays_on_invoke_with_request() -> None:
+    adapter = _TrackingAdapter(adapter_id="direct-adapter", text_response="should not be used directly")
+    formatter_adapter = _TrackingAdapter(adapter_id="formatter-adapter", json_response=_valid_formatter_json())
+    runtime = _TrackingContractRuntime(
+        step1_text_response=_valid_step1_text(),
+        formatter_json_response=_valid_formatter_json(),
+    )
+    original_transform = research_synthesis_module.transform_step1_bounded_text_to_candidate_payload
+
+    def failing_transform(_: str) -> dict:
+        raise ResearchSynthesisValidationError("forced transform failure")
+
+    research_synthesis_module.transform_step1_bounded_text_to_candidate_payload = failing_transform
+    try:
+        artifact = synthesize_research(
+            research_request=_request(),
+            evidence_pack=_evidence_pack(),
+            adapter=adapter,
+            formatter_adapter=formatter_adapter,
+            contract_runtime=runtime,  # type: ignore[arg-type]
+        )
+    finally:
+        research_synthesis_module.transform_step1_bounded_text_to_candidate_payload = original_transform
+
+    assert artifact.summary == "Formatter summary."
+    assert len(runtime.invoke_calls) == 1
+    assert len(runtime.invoke_with_request_calls) == 1
+    formatter_request, formatter_adapter_id = runtime.invoke_with_request_calls[0]
+    assert formatter_request.purpose == "research_synthesis_repair"
+    assert formatter_adapter_id == "formatter-adapter"

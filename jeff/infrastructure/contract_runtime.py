@@ -69,16 +69,29 @@ class ContractCallRequest:
         Optional system-level instructions to prepend. None means no system prompt.
     request_id:
         Stable caller-supplied ID for tracing. Auto-generated (UUID4) if None.
+    adapter_id:
+        Optional explicit adapter selection. When provided, purpose-based
+        routing is bypassed and this adapter is used directly.
+    routing_purpose:
+        Optional adapter-routing purpose override. When omitted, ``purpose`` is
+        also used as the adapter-routing key.
     project_id:
         Optional project scope for tracing/telemetry.
     work_unit_id:
         Optional work unit scope for tracing/telemetry.
     run_id:
         Optional run ID for tracing/telemetry.
+    response_mode:
+        Optional response-mode override. When omitted, the mode implied by
+        ``output_strategy`` is used.
+    json_schema:
+        Optional JSON schema forwarded to JSON-mode adapter calls.
     timeout_seconds:
         Per-call timeout override. None means use the adapter default.
     max_output_tokens:
         Optional output token cap. None means no cap.
+    reasoning_effort:
+        Optional reasoning-effort hint forwarded to the adapter request.
     metadata:
         Caller-supplied key/value metadata forwarded to the ModelRequest.
     """
@@ -88,11 +101,16 @@ class ContractCallRequest:
     prompt: str
     system_instructions: str | None = None
     request_id: str | None = None
+    adapter_id: str | None = None
+    routing_purpose: str | Purpose | None = None
     project_id: str | None = None
     work_unit_id: str | None = None
     run_id: str | None = None
+    response_mode: ModelResponseMode | None = None
+    json_schema: dict[str, Any] | None = None
     timeout_seconds: int | None = None
     max_output_tokens: int | None = None
+    reasoning_effort: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -101,10 +119,18 @@ class ContractCallRequest:
         prompt = self.prompt
         if not isinstance(prompt, str) or not prompt.strip():
             raise ValueError("prompt must be a non-empty string")
+        if self.response_mode is not None and not isinstance(self.response_mode, ModelResponseMode):
+            raise TypeError("response_mode must be a ModelResponseMode when provided")
+        if self.json_schema is not None and not isinstance(self.json_schema, dict):
+            raise TypeError("json_schema must be a dict when provided")
         if self.timeout_seconds is not None and self.timeout_seconds <= 0:
             raise ValueError("timeout_seconds must be greater than zero when provided")
         if self.max_output_tokens is not None and self.max_output_tokens <= 0:
             raise ValueError("max_output_tokens must be greater than zero when provided")
+        if self.reasoning_effort is not None:
+            reasoning_effort = self.reasoning_effort
+            if not isinstance(reasoning_effort, str) or not reasoning_effort.strip():
+                raise ValueError("reasoning_effort must be a non-empty string when provided")
 
 
 class ContractRuntime:
@@ -140,8 +166,15 @@ class ContractRuntime:
             domain-level post-processing.
         """
         purpose_str = _resolve_purpose_string(call.purpose)
-        adapter = self._services.get_adapter_for_purpose(purpose_str)
+        if call.adapter_id is not None:
+            adapter = self._services.get_model_adapter(call.adapter_id)
+        else:
+            routing_purpose = (
+                _resolve_purpose_string(call.routing_purpose) if call.routing_purpose is not None else purpose_str
+            )
+            adapter = self._services.get_adapter_for_purpose(routing_purpose)
         request_id = call.request_id or str(uuid.uuid4())
+        response_mode = call.response_mode or _strategy_to_response_mode(call.output_strategy)
         request = ModelRequest(
             request_id=request_id,
             project_id=call.project_id,
@@ -150,11 +183,11 @@ class ContractRuntime:
             purpose=purpose_str,
             prompt=call.prompt,
             system_instructions=call.system_instructions,
-            response_mode=_strategy_to_response_mode(call.output_strategy),
-            json_schema=None,
+            response_mode=response_mode,
+            json_schema=dict(call.json_schema) if call.json_schema is not None else None,
             timeout_seconds=call.timeout_seconds,
             max_output_tokens=call.max_output_tokens,
-            reasoning_effort=None,
+            reasoning_effort=call.reasoning_effort,
             metadata=dict(call.metadata),
         )
         return adapter.invoke(request)
@@ -195,6 +228,7 @@ class ContractRuntime:
         adapter = self._services.get_model_adapter(adapter_id)
         purpose_str = _resolve_purpose_string(call.purpose)
         request_id = call.request_id or str(uuid.uuid4())
+        response_mode = call.response_mode or _strategy_to_response_mode(call.output_strategy)
         request = ModelRequest(
             request_id=request_id,
             project_id=call.project_id,
@@ -203,11 +237,11 @@ class ContractRuntime:
             purpose=purpose_str,
             prompt=call.prompt,
             system_instructions=call.system_instructions,
-            response_mode=_strategy_to_response_mode(call.output_strategy),
-            json_schema=None,
+            response_mode=response_mode,
+            json_schema=dict(call.json_schema) if call.json_schema is not None else None,
             timeout_seconds=call.timeout_seconds,
             max_output_tokens=call.max_output_tokens,
-            reasoning_effort=None,
+            reasoning_effort=call.reasoning_effort,
             metadata=dict(call.metadata),
         )
         return adapter.invoke(request)

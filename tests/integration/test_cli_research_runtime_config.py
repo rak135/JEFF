@@ -8,6 +8,8 @@ from jeff.cognitive import ResearchRequest, collect_document_sources
 from jeff.infrastructure.model_adapters.providers import ollama as ollama_module
 from jeff.interface import JeffCLI
 
+from tests.fixtures.research import bounded_research_text_from_payload
+
 
 def test_cli_research_works_with_runtime_config_and_anchors_general_research(
     tmp_path: Path,
@@ -26,13 +28,15 @@ def test_cli_research_works_with_runtime_config_and_anchors_general_research(
     _install_ollama_stub(
         monkeypatch,
         captured_payloads=captured_payloads,
-        output_json={
-            "summary": "The documents support a bounded rollout.",
-            "findings": [{"text": "The plan emphasizes bounded rollout.", "source_refs": ["S1"]}],
-            "inferences": ["A narrow implementation remains better supported."],
-            "uncertainties": ["No external validation was performed."],
-            "recommendation": "Proceed with the bounded path.",
-        },
+        output_text=bounded_research_text_from_payload(
+            {
+                "summary": "The documents support a bounded rollout.",
+                "findings": [{"text": "The plan emphasizes bounded rollout.", "source_refs": ["S1"]}],
+                "inferences": ["A narrow implementation remains better supported."],
+                "uncertainties": ["No external validation was performed."],
+                "recommendation": "Proceed with the bounded path.",
+            }
+        ),
     )
     _write_runtime_config(tmp_path)
 
@@ -40,24 +44,17 @@ def test_cli_research_works_with_runtime_config_and_anchors_general_research(
 
     text = cli.run_one_shot(f'/research docs "{question}" "{document}"')
 
-    artifact_files = tuple((tmp_path / ".jeff_runtime" / "research_artifacts").glob("*.json"))
+    artifact_files = tuple((tmp_path / ".jeff_runtime").glob("*.json"))
 
     assert "anchored ad-hoc research into project_id=general_research" in text
     assert "summary=The documents support a bounded rollout." in text
     assert cli.session.scope.project_id == "general_research"
     assert captured_payloads[0]["model"] == "qwen2.5:14b"
     assert captured_payloads[0]["options"] == {"num_ctx": 16384}
-    assert captured_payloads[0]["__url"] == "http://127.0.0.1:11434/api/chat"
-    assert captured_payloads[0]["messages"][0]["role"] == "system"
-    assert captured_payloads[0]["messages"][1]["role"] == "user"
-    assert captured_payloads[0]["format"]["type"] == "object"
-    assert captured_payloads[0]["format"]["required"] == [
-        "summary",
-        "findings",
-        "inferences",
-        "uncertainties",
-        "recommendation",
-    ]
+    assert captured_payloads[0]["__url"] == "http://127.0.0.1:11434/api/generate"
+    assert isinstance(captured_payloads[0]["system"], str)
+    assert "SUMMARY:" in captured_payloads[0]["prompt"]
+    assert "ALLOWED_CITATION_KEYS: S1" in captured_payloads[0]["prompt"]
     assert "think" not in captured_payloads[0]
     assert artifact_files
 
@@ -79,13 +76,15 @@ def test_runtime_configured_research_adapter_is_used_instead_of_default_adapter(
     _install_ollama_stub(
         monkeypatch,
         captured_payloads=captured_payloads,
-        output_json={
-            "summary": "Research used the research-specific adapter.",
-            "findings": [{"text": "The research adapter path executed.", "source_refs": ["S1"]}],
-            "inferences": [],
-            "uncertainties": [],
-            "recommendation": "Keep the purpose override.",
-        },
+        output_text=bounded_research_text_from_payload(
+            {
+                "summary": "Research used the research-specific adapter.",
+                "findings": [{"text": "The research adapter path executed.", "source_refs": ["S1"]}],
+                "inferences": [],
+                "uncertainties": [],
+                "recommendation": "Keep the purpose override.",
+            }
+        ),
     )
     _write_runtime_config(tmp_path)
 
@@ -112,13 +111,15 @@ def test_runtime_configured_handoff_memory_still_delegates_to_current_memory_lay
     _install_ollama_stub(
         monkeypatch,
         captured_payloads=[],
-        output_json={
-            "summary": "The documents support a bounded rollout.",
-            "findings": [{"text": "The plan emphasizes bounded rollout.", "source_refs": ["S1"]}],
-            "inferences": ["A narrow implementation remains better supported."],
-            "uncertainties": ["No external validation was performed."],
-            "recommendation": "Proceed with the bounded path.",
-        },
+        output_text=bounded_research_text_from_payload(
+            {
+                "summary": "The documents support a bounded rollout.",
+                "findings": [{"text": "The plan emphasizes bounded rollout.", "source_refs": ["S1"]}],
+                "inferences": ["A narrow implementation remains better supported."],
+                "uncertainties": ["No external validation was performed."],
+                "recommendation": "Proceed with the bounded path.",
+            }
+        ),
     )
     _write_runtime_config(tmp_path)
 
@@ -161,7 +162,7 @@ def _install_ollama_stub(
     monkeypatch: pytest.MonkeyPatch,
     *,
     captured_payloads: list[dict[str, object]],
-    output_json: dict[str, object],
+    output_text: str,
 ) -> None:
     def _fake_urlopen(http_request, timeout=None):  # type: ignore[no-untyped-def]
         del timeout
@@ -170,13 +171,13 @@ def _install_ollama_stub(
         captured_payloads.append(payload)
         if http_request.full_url.endswith("/api/chat"):
             response_payload = {
-                "message": {"content": json.dumps(output_json)},
+                "message": {"content": output_text},
                 "prompt_eval_count": 11,
                 "eval_count": 17,
             }
         else:
             response_payload = {
-                "response": json.dumps(output_json),
+                "response": output_text,
                 "prompt_eval_count": 11,
                 "eval_count": 17,
             }

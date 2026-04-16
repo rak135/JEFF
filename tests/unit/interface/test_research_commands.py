@@ -15,6 +15,7 @@ from jeff.interface import InterfaceContext, JeffCLI
 from jeff.memory import InMemoryMemoryStore
 
 from tests.fixtures.cli import build_state_with_runs
+from tests.fixtures.research import bounded_research_text_from_payload
 
 
 def test_docs_command_parses_correctly(tmp_path: Path) -> None:
@@ -229,7 +230,7 @@ def _build_research_context(tmp_path: Path, *, fake_json_response: dict[str, obj
                         provider_kind=AdapterProviderKind.FAKE,
                         adapter_id="fake-default",
                         model_name="fake-model",
-                        fake_json_response=fake_json_response,
+                        fake_text_response=bounded_research_text_from_payload(fake_json_response),
                     ),
                 ),
             )

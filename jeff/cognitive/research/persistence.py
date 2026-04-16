@@ -52,7 +52,7 @@ class ResearchArtifactRecord:
 class ResearchArtifactStore:
     def __init__(self, root_dir: Path | str) -> None:
         self.root_dir = Path(root_dir)
-        self._artifacts_dir = self.root_dir / "research_artifacts"
+        self._artifacts_dir = self.root_dir
         self._artifacts_dir.mkdir(parents=True, exist_ok=True)
 
     def save(self, record: ResearchArtifactRecord, *, debug_emitter: ResearchDebugEmitter | None = None) -> Path:

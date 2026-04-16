@@ -42,6 +42,17 @@ def test_save_writes_json_file(tmp_path: Path) -> None:
     assert payload["artifact_id"] == record.artifact_id
 
 
+def test_save_uses_configured_root_dir_without_extra_artifact_suffix(tmp_path: Path) -> None:
+    store = ResearchArtifactStore(tmp_path)
+    record = build_research_artifact_record(_request(), _evidence_pack(), _artifact())
+
+    path = store.save(record)
+
+    assert path.parent == tmp_path
+    assert path == tmp_path / f"{record.artifact_id}.json"
+    assert not (tmp_path / "research_artifacts").exists()
+
+
 def test_load_round_trips_record(tmp_path: Path) -> None:
     store = ResearchArtifactStore(tmp_path)
     record = build_research_artifact_record(_request(), _evidence_pack(), _artifact())
@@ -122,7 +133,7 @@ def test_persisted_ordering_is_newest_first(tmp_path: Path) -> None:
 
 def test_malformed_persisted_json_fails_closed(tmp_path: Path) -> None:
     store = ResearchArtifactStore(tmp_path)
-    bad_path = tmp_path / "research_artifacts" / "bad.json"
+    bad_path = tmp_path / "bad.json"
     bad_path.parent.mkdir(parents=True, exist_ok=True)
     bad_path.write_text("{not valid json", encoding="utf-8")
 

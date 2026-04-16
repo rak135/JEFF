@@ -85,7 +85,7 @@ def test_old_no_date_source_records_remain_valid(tmp_path: Path) -> None:
         "created_at": "2026-04-12T10:00:00+00:00",
         "schema_version": "1.0",
     }
-    path = tmp_path / "research_artifacts" / "research-old.json"
+    path = tmp_path / "research-old.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
 

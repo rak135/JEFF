@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(wc -l C:/DATA/PROJECTS/JEFF/3step_transition*.md)",
+      "Bash(wc *)",
+      "Bash(grep -l \"3-step\\\\|bounded_text_then_parse\\\\|Step 1 bounded\\\\|synthesize_research_with_runtime\" C:/DATA/PROJECTS/JEFF/handoffs/*.md C:/DATA/PROJECTS/JEFF/handoffs/system/*.md)",
+      "Bash(python -c \"from jeff.bootstrap import run_startup_preflight; [print\\(check\\) for check in run_startup_preflight\\(\\)]\")",
+      "Bash(python -m pytest tests/unit/infrastructure tests/unit/cognitive/test_research_bounded_syntax.py tests/unit/cognitive/test_research_deterministic_transformer.py tests/unit/cognitive/test_research_synthesis.py tests/unit/cognitive/test_research_contract_runtime_adoption.py -q)",
+      "Bash(python -m pytest tests/unit tests/integration -q --no-header)",
+      "Bash(python -m pytest tests/unit/interface/test_research_commands.py::test_docs_command_parses_correctly -x)"
+    ]
+  }
+}
