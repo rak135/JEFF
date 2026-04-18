@@ -44,7 +44,7 @@ def test_cli_research_works_with_runtime_config_and_anchors_general_research(
 
     text = cli.run_one_shot(f'/research docs "{question}" "{document}"')
 
-    artifact_files = tuple((tmp_path / ".jeff_runtime").glob("*.json"))
+    artifact_files = tuple((tmp_path / ".jeff_runtime" / "artifacts" / "research").glob("*.json"))
 
     assert "anchored ad-hoc research into project_id=general_research" in text
     assert "summary=The documents support a bounded rollout." in text

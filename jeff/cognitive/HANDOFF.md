@@ -4,13 +4,14 @@
 
 # Module Purpose
 
-- Own bounded reasoning-layer contracts for context, research, proposal, selection, conditional planning, and evaluation without taking over truth, governance, execution, or memory ownership.
+- Own bounded reasoning-layer contracts for context, research, proposal, selection, the post-selection downstream bridge, conditional planning, and evaluation without taking over truth, governance, execution, or memory ownership.
 
 # Current Role in Jeff
 
 - Assembles truth-first context from current canonical state and bounded support inputs.
 - Owns the active research package for prepared-evidence synthesis, document and web source acquisition, research artifact persistence, and selective research-to-memory handoff.
 - Produces bounded proposal, selection, planning, and evaluation outputs for downstream layers without implying permission or mutating truth.
+- Owns the bounded post-selection bridge from Selection output into downstream Action/governance handoff inputs without taking over governance or execution semantics.
 
 # Boundaries / Non-Ownership
 
@@ -25,6 +26,7 @@
 - `jeff/cognitive/research/`
 - `jeff/cognitive/proposal/`
 - `jeff/cognitive/selection/`
+- `jeff/cognitive/post_selection/`
 - `jeff/cognitive/planning.py`
 - `jeff/cognitive/evaluation.py`
 - `jeff/cognitive/types.py`
@@ -55,6 +57,7 @@
 - Proposal, selection, planning, and evaluation remain separate bounded contracts with unchanged semantics.
 - Selection is now a real submodule package rather than a flat file.
 - Selection now also has a deterministic package-local choice entry built on its local contracts.
+- Post-selection downstream bridge is now a real submodule package rather than five flat top-level modules.
 
 # Important Invariants
 
@@ -71,6 +74,7 @@
 - Research now has meaningful local complexity; future work must stay inside `jeff/cognitive/research/` instead of recreating blob modules.
 - Proposal now has its own package boundary; future work should stay inside `jeff/cognitive/proposal/` instead of rebuilding a flat module.
 - Selection now has its own package boundary; future work should stay inside `jeff/cognitive/selection/` instead of rebuilding a flat module.
+- Post-selection bridge now has its own package boundary; future work should stay inside `jeff/cognitive/post_selection/` instead of rebuilding flat downstream bridge modules.
 - The web acquisition path is intentionally bounded and basic rather than a general crawler or autonomy loop.
 - Legacy research compatibility still exists; removing it later will require checking real callers/tests first.
 - Future changes must not let research persistence or memory handoff collapse support artifacts into truth or into a memory dump.
@@ -80,9 +84,11 @@
 - If work is about research, continue from `jeff/cognitive/research/HANDOFF.md` first.
 - If work is about proposal, continue from `jeff/cognitive/proposal/HANDOFF.md` first.
 - If work is about selection, continue from `jeff/cognitive/selection/HANDOFF.md` first.
+- If work is about the downstream bridge after Selection, continue from `jeff/cognitive/post_selection/HANDOFF.md` first.
 - Keep future research slices inside the research package and preserve the separation between evidence acquisition, synthesis, persistence, and memory handoff.
 - Keep future proposal slices inside the proposal package and preserve the separation between proposal contracts and later runtime/model work.
 - Keep future selection slices inside the selection package and preserve the separation between selection contracts and later comparison/runtime work.
+- Keep future downstream bridge slices inside the post-selection package and preserve the separation between Selection semantics, bridge transformations, governance semantics, and execution semantics.
 - If the legacy research surface stops having real callers/tests, isolate or remove it locally instead of letting it spread back across the module.
 
 # Submodule Map
@@ -91,6 +97,7 @@
 - `research/`: bounded research package for contracts, synthesis, documents, web, persistence, and memory handoff; has its own handoff at `jeff/cognitive/research/HANDOFF.md`.
 - `proposal/`: bounded proposal package for option-generation contracts; has its own handoff at `jeff/cognitive/proposal/HANDOFF.md`.
 - `selection/`: bounded choice package with local contracts and deterministic choice behavior; has its own handoff at `jeff/cognitive/selection/HANDOFF.md`.
+- `post_selection/`: bounded downstream bridge package for override, basis resolution, effective proposal materialization, Action formation, and governance handoff; has its own handoff at `jeff/cognitive/post_selection/HANDOFF.md`.
 - `planning.py`: conditional planning only; no separate handoff.
 - `evaluation.py`: outcome judgment contracts; no separate handoff.
 - `types.py`: shared cognitive helper types; no separate handoff.
@@ -101,6 +108,7 @@
 - `jeff/cognitive/proposal/HANDOFF.md`
 - `jeff/cognitive/research/HANDOFF.md`
 - `jeff/cognitive/selection/HANDOFF.md`
+- `jeff/cognitive/post_selection/HANDOFF.md`
 - `jeff/core/HANDOFF.md`
 - `jeff/governance/HANDOFF.md`
 - `jeff/action/HANDOFF.md`

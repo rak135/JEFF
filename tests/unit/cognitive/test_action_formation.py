@@ -1,20 +1,20 @@
 import pytest
 
-from jeff.cognitive.action_formation import (
+from jeff.cognitive.post_selection.action_formation import (
     ActionFormationError,
     ActionFormationRequest,
     form_action_from_materialized_proposal,
 )
-from jeff.cognitive.proposal import ProposalResult, ProposalResultOption
-from jeff.cognitive.selection import SelectionResult
-from jeff.cognitive.selection_action_resolution import (
+from jeff.cognitive.post_selection.action_resolution import (
     SelectionActionResolutionRequest,
     resolve_selection_action_basis,
 )
-from jeff.cognitive.selection_effective_proposal import (
+from jeff.cognitive.post_selection.effective_proposal import (
     SelectionEffectiveProposalRequest,
     materialize_effective_proposal,
 )
+from jeff.cognitive.proposal import ProposalResult, ProposalResultOption
+from jeff.cognitive.selection import SelectionResult
 from jeff.core.schemas import Scope
 
 

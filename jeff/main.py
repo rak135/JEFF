@@ -14,7 +14,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="python -m jeff",
         description=(
             "Start the current Jeff v1 CLI-first backbone. "
-            "This startup path bootstraps an explicit in-memory demo workspace and can load local runtime config "
+            "This startup path loads or initializes a persisted runtime workspace under .jeff_runtime/ and can load local runtime config "
             "for research when jeff.runtime.toml is present."
         ),
         epilog=(
@@ -36,8 +36,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--command",
         metavar="COMMAND",
-        help="run one CLI command against the explicit in-memory demo context and exit",
+        action="append",
+        help="run one CLI command against the persisted runtime context; may be repeated",
     )
+    parser.add_argument("--project", metavar="PROJECT_ID", help="set one-shot or startup project scope locally")
+    parser.add_argument("--work", metavar="WORK_UNIT_ID", help="set one-shot or startup work_unit scope locally")
+    parser.add_argument("--run", metavar="RUN_ID", help="set one-shot or startup run scope locally")
     parser.add_argument(
         "--json",
         action="store_true",
@@ -55,10 +59,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
     if args.json and args.command is None:
         parser.error("--json requires --command")
+    if args.work is not None and args.project is None:
+        parser.error("--work requires --project")
+    if args.run is not None and args.work is None:
+        parser.error("--run requires --work")
 
     try:
         from jeff.bootstrap import build_startup_interface_context, run_startup_preflight
-        from jeff.interface import JeffCLI
+        from jeff.interface import CliSession, JeffCLI, SessionScope
     except Exception as exc:
         return _print_error(f"startup imports failed: {exc}")
 
@@ -71,12 +79,21 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 0
 
         context = build_startup_interface_context()
-        cli = JeffCLI(context=context)
+        cli = JeffCLI(
+            context=context,
+            session=CliSession(
+                scope=SessionScope(project_id=args.project, work_unit_id=args.work, run_id=args.run)
+            ),
+        )
 
         if args.command is not None:
-            output = cli.run_one_shot(args.command, json_output=args.json)
-            if output:
-                print(output)
+            outputs: list[str] = []
+            for command in args.command:
+                output = cli.run_one_shot(command, json_output=args.json)
+                if output:
+                    outputs.append(output)
+            if outputs:
+                print("\n".join(outputs))
             return 0
 
         if not sys.stdin.isatty():
@@ -94,7 +111,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 def _run_interactive(cli) -> int:
     from jeff.interface.render import color_enabled, format_error_text, format_hint_text, format_info_text, format_prompt_text
-    from jeff.cognitive import ResearchSynthesisRuntimeError
+    from jeff.cognitive import ResearchOperatorSurfaceError, ResearchSynthesisRuntimeError
 
     use_stdout_color = color_enabled(stream_isatty=sys.stdout.isatty())
     use_stderr_color = color_enabled(stream_isatty=sys.stderr.isatty())
@@ -102,10 +119,25 @@ def _run_interactive(cli) -> int:
     print(format_info_text("Jeff v1 interactive shell", use_color=use_stdout_color))
     print(
         format_info_text(
-            "Startup bootstrapped an explicit in-memory demo workspace and loads jeff.runtime.toml when present.",
+            cli.context.startup_summary
+            or "Startup loaded the persisted Jeff runtime workspace.",
             use_color=use_stdout_color,
         )
     )
+    if cli.context.infrastructure_services is None:
+        print(
+            format_info_text(
+                "Research runtime config is not loaded; add jeff.runtime.toml to enable research CLI.",
+                use_color=use_stdout_color,
+            )
+        )
+    else:
+        print(
+            format_info_text(
+                "Research runtime config loaded from jeff.runtime.toml.",
+                use_color=use_stdout_color,
+            )
+        )
     print(format_hint_text("This shell is command-driven. Use slash commands like /help or /project list.", use_color=use_stdout_color))
     print(format_hint_text("Plain text is not a supported command surface. Type 'exit' or 'quit' to leave.", use_color=use_stdout_color))
 
@@ -131,8 +163,8 @@ def _run_interactive(cli) -> int:
                 live_debug_emitter=lambda line: print(line),
             )
             output = result.text
-        except ResearchSynthesisRuntimeError as exc:
-            rendered = cli.render_research_runtime_error(exc)
+        except (ResearchSynthesisRuntimeError, ResearchOperatorSurfaceError) as exc:
+            rendered = cli.render_research_error(exc)
             if cli.session.json_output:
                 print(rendered)
             else:

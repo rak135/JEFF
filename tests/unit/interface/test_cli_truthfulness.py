@@ -87,3 +87,4 @@ def test_blocked_and_inconclusive_states_remain_visible() -> None:
     assert "execution_status=completed_with_degradation" in text
     assert "outcome_state=inconclusive" in text
     assert "evaluation_verdict=inconclusive" in text
+    assert "[support][evaluation] verdict=inconclusive recommended_next_step=request_clarification" in text

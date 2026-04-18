@@ -7,8 +7,8 @@ from dataclasses import dataclass
 from jeff.contracts import Action
 from jeff.core.schemas import Scope
 
-from .selection_effective_proposal import MaterializedEffectiveProposal
-from .types import require_text
+from ..types import require_text
+from .effective_proposal import MaterializedEffectiveProposal
 
 _DIRECTLY_ACTIONABLE_PROPOSAL_TYPES = {"direct_action"}
 

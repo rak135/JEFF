@@ -6,7 +6,7 @@ from collections.abc import Iterable
 import json
 from collections.abc import Callable
 
-from jeff.cognitive import ResearchSynthesisRuntimeError
+from jeff.cognitive import ResearchOperatorSurfaceError, ResearchSynthesisRuntimeError
 
 from .json_views import research_error_json
 from .commands import CommandResult, InterfaceContext, execute_command
@@ -31,6 +31,10 @@ class JeffCLI:
     @property
     def prompt(self) -> str:
         return self._session.prompt
+
+    @property
+    def context(self) -> InterfaceContext:
+        return self._context
 
     def run_one_shot(self, command_line: str, *, json_output: bool | None = None) -> str:
         result = self.execute(command_line, json_output=json_output)
@@ -64,7 +68,10 @@ class JeffCLI:
         self._context = result.context
         return result
 
-    def render_research_runtime_error(self, error: ResearchSynthesisRuntimeError) -> str:
+    def render_research_error(
+        self,
+        error: ResearchSynthesisRuntimeError | ResearchOperatorSurfaceError,
+    ) -> str:
         if self._session.json_output:
             payload = research_error_json(
                 project_id=error.project_id,
@@ -73,6 +80,7 @@ class JeffCLI:
                 research_mode=error.research_mode,
                 error=error,
                 session=self._session,
+                debug_events=tuple(getattr(error, "debug_events", ())),
             )
             debug_events = tuple(getattr(error, "debug_events", ()))
             if self._session.output_mode == "debug" and debug_events:
@@ -90,8 +98,8 @@ class JeffCLI:
 
     def _compose_exception_output(self, exc: Exception) -> str:
         debug_events = tuple(getattr(exc, "debug_events", ()))
-        if isinstance(exc, ResearchSynthesisRuntimeError):
-            rendered_error = self.render_research_runtime_error(exc)
+        if isinstance(exc, (ResearchSynthesisRuntimeError, ResearchOperatorSurfaceError)):
+            rendered_error = self.render_research_error(exc)
         else:
             rendered_error = str(exc)
         if self._session.output_mode != "debug" or not debug_events or self._session.json_output:

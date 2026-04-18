@@ -44,7 +44,10 @@ def test_live_cli_timeout_with_json_on_surfaces_structured_json(
 
     assert exit_code == 0
     assert payload["view"] == "research_error"
+    assert payload["derived"]["failure_kind"] == "synthesis_runtime_problem"
     assert payload["support"]["error_code"] == "timeout"
+    assert payload["support"]["question"] == "What does the bounded plan support?"
+    assert payload["support"]["provided_input_count"] == 1
     assert payload["support"]["adapter_id"] == "research-timeout"
     assert "research synthesis invocation failed" not in captured.out
 
@@ -95,7 +98,36 @@ def test_live_cli_success_path_remains_unchanged(
 
     assert exit_code == 0
     assert "summary=The documents support a bounded rollout." in captured.out
+    assert "artifact_locator=" in captured.out
+    assert "source_count=1" in captured.out
+    assert "persistence=research artifact persisted as support at " in captured.out
     assert "research_error" not in captured.out
+
+
+def test_live_cli_missing_document_path_surfaces_exact_input_problem(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    cli, _ = _build_success_docs_cli(tmp_path)
+    missing_path = tmp_path / "missing-plan.md"
+    _install_inputs(
+        monkeypatch,
+        [
+            "/project use project-1",
+            "/work use wu-1",
+            f'/research docs "What does the bounded plan support?" "{missing_path}"',
+            "quit",
+        ],
+    )
+
+    exit_code = _run_interactive(cli)
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "research input problem" in captured.err
+    assert "all explicit document paths were missing" in captured.err
+    assert str(missing_path) in captured.err
 
 
 def _build_docs_cli(tmp_path: Path, *, mode: str) -> tuple[JeffCLI, Path]:

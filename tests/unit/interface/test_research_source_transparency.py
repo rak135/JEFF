@@ -110,6 +110,7 @@ def test_support_vs_truth_distinction_remains_visible_and_date_is_not_fabricated
 def _record(
     *,
     findings: tuple[ResearchFinding, ...] | None = None,
+    summary: str | None = None,
 ) -> ResearchArtifactRecord:
     actual_findings = findings or (
         ResearchFinding(
@@ -124,7 +125,7 @@ def _record(
         run_id="run-1",
         question="What does the bounded rollout support?",
         source_mode="web",
-        summary="The fetched source supports a bounded rollout.",
+        summary=summary or "The fetched source supports a bounded rollout.",
         findings=actual_findings,
         inferences=("A narrow path remains better supported.",),
         uncertainties=("Only bounded support was considered.",),
@@ -156,3 +157,47 @@ def _record(
 
 def _session() -> CliSession:
     return CliSession(scope=SessionScope(project_id="project-1", work_unit_id="wu-1", run_id="run-1"))
+
+
+def test_research_result_json_keeps_full_long_summary_without_preview_field() -> None:
+    long_summary = (
+        "The fetched source and the local plan both support keeping the rollout bounded while the operator "
+        "surface is validated further, because the available evidence points toward a narrow next step, "
+        "stable current behavior, and no strong basis for widening the scope yet."
+    )
+    payload = research_result_json(
+        project_id="project-1",
+        work_unit_id="wu-1",
+        run_id="run-1",
+        research_mode="web",
+        handoff_memory_requested=False,
+        record=_record(summary=long_summary),
+        memory_handoff_result=None,
+        session=_session(),
+    )
+
+    assert len(long_summary) > 200
+    assert payload["support"]["summary"] == long_summary
+    assert "summary_preview" not in payload["support"]
+
+
+def test_human_research_render_prints_full_stored_summary() -> None:
+    long_summary = (
+        "The fetched source and the local plan both support keeping the rollout bounded while the operator "
+        "surface is validated further, because the available evidence points toward a narrow next step, "
+        "stable current behavior, and no strong basis for widening the scope yet."
+    )
+    payload = research_result_json(
+        project_id="project-1",
+        work_unit_id="wu-1",
+        run_id="run-1",
+        research_mode="web",
+        handoff_memory_requested=False,
+        record=_record(summary=long_summary),
+        memory_handoff_result=None,
+        session=_session(),
+    )
+
+    rendered = render_research_result(payload)
+
+    assert f"summary={long_summary}" in rendered

@@ -6,10 +6,10 @@ from dataclasses import dataclass
 
 from jeff.core.schemas import ProposalId, SelectionId, coerce_proposal_id, coerce_selection_id
 
-from .proposal import ProposalResult, ProposalResultOption
-from .selection import SelectionDisposition
-from .selection_action_resolution import ResolvedSelectionActionBasis, SelectionActionResolutionSource
-from .types import require_text
+from ..proposal import ProposalResult, ProposalResultOption
+from ..selection import SelectionDisposition
+from ..types import require_text
+from .action_resolution import ResolvedSelectionActionBasis, SelectionActionResolutionSource
 
 
 @dataclass(frozen=True, slots=True)

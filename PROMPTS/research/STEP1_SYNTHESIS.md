@@ -5,6 +5,7 @@ No markdown, no code fences, no commentary.
 Do not invent facts, sources, or certainty.
 Use only the allowed citation keys in FINDINGS cites lines.
 Do not return JSON.
+SUMMARY must be non-empty concise prose, not a raw dump of the full artifact body.
 UNCERTAINTIES section is REQUIRED and must never be omitted.
 If no meaningful uncertainties are identified from the evidence, use the exact bullet: '- No explicit uncertainties identified from the provided evidence.'
 Never claim absolute certainty beyond the provided evidence.
@@ -17,6 +18,7 @@ Keep findings, inferences, and uncertainties distinct.
 Do not output markdown, code fences, or extra prose.
 Each required section must appear exactly once in canonical order.
 Each finding must use paired '- text:' and '  cites:' lines.
+SUMMARY must be non-empty concise prose, not a raw dump of the full report body.
 INFERENCES must contain at least one bullet line.
 UNCERTAINTIES is REQUIRED and must contain at least one bullet line.
 If no meaningful uncertainties are identified, use exactly: '- No explicit uncertainties identified from the provided evidence.'

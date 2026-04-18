@@ -7,8 +7,8 @@ from dataclasses import dataclass
 from jeff.contracts import Action
 from jeff.governance import ActionEntryDecision, Approval, CurrentTruthSnapshot, Policy, evaluate_action_entry
 
+from ..types import require_text
 from .action_formation import FormedActionResult
-from .types import require_text
 
 
 @dataclass(frozen=True, slots=True)

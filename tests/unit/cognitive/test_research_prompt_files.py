@@ -39,6 +39,7 @@ def test_step1_system_instructions_contain_required_constraints() -> None:
     assert "Use only the provided evidence." in system_instructions
     assert "Return bounded plain text in the declared section syntax." in system_instructions
     assert "Do not return JSON." in system_instructions
+    assert "SUMMARY must be non-empty concise prose" in system_instructions
     assert "UNCERTAINTIES section is REQUIRED" in system_instructions
 
 
@@ -55,6 +56,7 @@ def test_step1_prompt_template_contains_required_structure() -> None:
 
     assert "TASK: bounded research synthesis" in template
     assert "Output bounded plain text using the exact section syntax below." in template
+    assert "SUMMARY must be non-empty concise prose" in template
     assert "REQUIRED_BOUNDED_SYNTAX:" in template
     assert "{{QUESTION}}" in template
     assert "{{ALLOWED_CITATION_KEYS}}" in template
@@ -174,6 +176,7 @@ def test_step1_model_request_prompt_is_file_backed() -> None:
     # Static content that must come from the file
     assert "TASK: bounded research synthesis" in model_request.prompt
     assert "Output bounded plain text using the exact section syntax below." in model_request.prompt
+    assert "SUMMARY must be non-empty concise prose, not a raw dump of the full report body." in model_request.prompt
     assert "REQUIRED_BOUNDED_SYNTAX:" in model_request.prompt
     assert "RECOMMENDATION must be plain text or NONE." in model_request.prompt
 

@@ -23,6 +23,9 @@ def test_show_json_view_preserves_truth_support_and_derived_distinctions() -> No
     assert "selected_proposal_id" in payload["derived"]
     assert "governance_outcome" in payload["derived"]
     assert "recent_events" in payload["support"]
+    assert payload["support"]["proposal_summary"]["available"] is True
+    assert payload["support"]["proposal_summary"]["serious_option_count"] == 2
+    assert payload["support"]["evaluation_summary"]["available"] is True
     assert "health_posture" in payload["telemetry"]
     assert "status" not in payload["derived"]
 

@@ -34,7 +34,7 @@ research = "fake-research"
 
     assert context.infrastructure_services is not None
     assert context.research_artifact_store is not None
-    assert context.research_artifact_store.root_dir == tmp_path / ".jeff_runtime"
+    assert context.research_artifact_store.root_dir == tmp_path / ".jeff_runtime" / "artifacts" / "research"
     assert context.memory_store is not None
 
 

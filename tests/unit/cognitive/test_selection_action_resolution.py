@@ -1,13 +1,16 @@
 import pytest
 
 from jeff.cognitive.selection import SelectionResult
-from jeff.cognitive.selection_action_resolution import (
+from jeff.cognitive.post_selection.action_resolution import (
     SelectionActionResolutionError,
     SelectionActionResolutionRequest,
     resolve_selection_action_basis,
 )
-from jeff.cognitive.selection_override import OperatorSelectionOverride, OperatorSelectionOverrideRequest
-from jeff.cognitive.selection_override import build_operator_selection_override
+from jeff.cognitive.post_selection.override import (
+    OperatorSelectionOverride,
+    OperatorSelectionOverrideRequest,
+    build_operator_selection_override,
+)
 
 
 def test_selected_selection_without_override_resolves_to_selection_source() -> None:

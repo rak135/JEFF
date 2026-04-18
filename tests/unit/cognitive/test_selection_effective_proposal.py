@@ -2,17 +2,17 @@ import pytest
 
 from jeff.cognitive.proposal import ProposalResult, ProposalResultOption
 from jeff.cognitive.selection import SelectionResult
-from jeff.cognitive.selection_action_resolution import (
+from jeff.cognitive.post_selection.action_resolution import (
     ResolvedSelectionActionBasis,
     SelectionActionResolutionRequest,
     resolve_selection_action_basis,
 )
-from jeff.cognitive.selection_effective_proposal import (
+from jeff.cognitive.post_selection.effective_proposal import (
     SelectionEffectiveProposalMaterializationError,
     SelectionEffectiveProposalRequest,
     materialize_effective_proposal,
 )
-from jeff.cognitive.selection_override import OperatorSelectionOverrideRequest, build_operator_selection_override
+from jeff.cognitive.post_selection.override import OperatorSelectionOverrideRequest, build_operator_selection_override
 from jeff.core.schemas import Scope
 
 

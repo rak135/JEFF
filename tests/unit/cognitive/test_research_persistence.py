@@ -1,4 +1,5 @@
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -12,6 +13,7 @@ from jeff.cognitive import (
     ResearchRequest,
     SourceItem,
     build_research_artifact_record,
+    validate_research_artifact_record,
 )
 
 
@@ -148,6 +150,45 @@ def test_persistence_requires_only_research_contracts_and_filesystem(tmp_path: P
     path = store.save(record)
 
     assert path.suffix == ".json"
+
+
+def test_research_artifact_validation_accepts_summary_longer_than_200_chars() -> None:
+    long_summary = (
+        "The bounded plan supports a narrow rollout because the prepared evidence consistently points "
+        "to keeping scope tight, sequencing work in smaller steps, and avoiding premature expansion while "
+        "the current operator-facing path is still being validated against realistic runtime behavior."
+    )
+    record = build_research_artifact_record(
+        _request(),
+        _evidence_pack(),
+        replace(_artifact(), summary=long_summary),
+    )
+
+    validate_research_artifact_record(record)
+
+    assert len(record.summary) > 200
+    assert record.summary == long_summary
+
+
+def test_research_artifact_validation_rejects_whitespace_only_summary() -> None:
+    record = replace(build_research_artifact_record(_request(), _evidence_pack(), _artifact()), summary="   ")
+
+    with pytest.raises(ValueError, match="summary must be a non-empty string"):
+        validate_research_artifact_record(record)
+
+
+def test_research_artifact_validation_rejects_obvious_report_dump_summary() -> None:
+    dump_summary = "\n".join(
+        [
+            "FINDINGS:",
+            "- text: The plan stays narrow.",
+            "  cites: S1",
+        ]
+    )
+    record = replace(build_research_artifact_record(_request(), _evidence_pack(), _artifact()), summary=dump_summary)
+
+    with pytest.raises(ValueError, match="summary must be concise prose"):
+        validate_research_artifact_record(record)
 
 
 def _request() -> ResearchRequest:

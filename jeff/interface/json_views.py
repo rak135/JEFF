@@ -8,6 +8,7 @@ from typing import Any
 
 from jeff.cognitive import (
     ResearchArtifactRecord,
+    ResearchOperatorSurfaceError,
     ResearchSynthesisRuntimeError,
     validate_research_artifact_record,
 )
@@ -87,6 +88,7 @@ def run_show_json(
     work_unit: WorkUnit,
     run: Run,
     flow_run: FlowRunResult | None,
+    selection_review: object | None = None,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "view": "run_show",
@@ -104,11 +106,17 @@ def run_show_json(
     }
     if flow_run is None:
         payload["derived"] = {"flow_visible": False}
+        payload["support"] = {
+            "proposal_summary": _proposal_summary_json(selection_review=selection_review, flow_run=None),
+            "evaluation_summary": _evaluation_summary_json(flow_run=None),
+        }
         return payload
 
     payload["derived"] = _flow_derived_json(flow_run)
     payload["support"] = {
         "routing_decision": routing_json(flow_run),
+        "proposal_summary": _proposal_summary_json(selection_review=selection_review, flow_run=flow_run),
+        "evaluation_summary": _evaluation_summary_json(flow_run=flow_run),
         "recent_events": trace_json(flow_run)["support"]["events"][-5:],
     }
     payload["telemetry"] = _telemetry_json(flow_run)
@@ -134,6 +142,7 @@ def selection_review_json(
     materialized = None if selection_review is None else getattr(selection_review, "materialized_effective_proposal", None)
     formed_action = None if selection_review is None else getattr(selection_review, "formed_action_result", None)
     governance_handoff = None if selection_review is None else getattr(selection_review, "governance_handoff_result", None)
+    proposal_result = None if selection_review is None else getattr(selection_review, "proposal_result", None)
 
     return {
         "view": "selection_review",
@@ -216,6 +225,7 @@ def selection_review_json(
                 absent_reason="governance handoff has not been recorded",
             ),
         },
+        "proposal": _proposal_summary_json(selection_review=selection_review, flow_run=flow_run),
         "support": {
             "flow_visible": flow_run is not None,
             "selection_review_attached": selection_review is not None,
@@ -230,6 +240,11 @@ def selection_review_json(
                 review_available=selection_review is not None,
                 object_present=materialized is not None,
                 absent_reason="no materialized effective proposal is available",
+            ),
+            "selection_rationale_summary": (
+                None
+                if selection_result is None
+                else _truncate_text(selection_result.rationale, max_length=180)
             ),
         },
     }
@@ -389,9 +404,11 @@ def research_result_json(
     record: ResearchArtifactRecord,
     memory_handoff_result: MemoryWriteDecision | None,
     session: CliSession,
+    artifact_locator: str | None = None,
 ) -> dict[str, Any]:
     validate_research_artifact_record(record)
     source_index = {source.source_id: _project_research_source(source) for source in record.source_items}
+    persistence_note = _research_persistence_note(artifact_locator)
     return {
         "view": "research_result",
         "truth": {
@@ -407,8 +424,11 @@ def research_result_json(
         },
         "support": {
             "artifact_id": record.artifact_id,
+            "artifact_locator": artifact_locator,
             "question": record.question,
             "summary": record.summary,
+            "source_count": len(record.source_items),
+            "persistence_note": persistence_note,
             "findings": [
                 {
                     "text": finding.text,
@@ -438,9 +458,26 @@ def research_error_json(
     work_unit_id: str | None,
     run_id: str | None,
     research_mode: str | None,
-    error: ResearchSynthesisRuntimeError,
+    error: ResearchSynthesisRuntimeError | ResearchOperatorSurfaceError,
     session: CliSession,
+    debug_events: tuple[dict[str, object], ...] = (),
 ) -> dict[str, Any]:
+    support = dict(error.to_payload())
+    if support.get("checkpoint") is None:
+        checkpoint = _latest_research_checkpoint(debug_events)
+        if checkpoint is not None:
+            support["checkpoint"] = checkpoint
+    if support.get("resolved_source_count") is None:
+        resolved_source_count = _latest_research_count(
+            debug_events,
+            "projected_source_count",
+            "source_item_count",
+            "loaded_record_source_count",
+            "persisted_record_source_count",
+            "source_count",
+        )
+        if resolved_source_count is not None:
+            support["resolved_source_count"] = resolved_source_count
     return {
         "view": "research_error",
         "truth": {
@@ -450,8 +487,9 @@ def research_error_json(
         },
         "derived": {
             "research_mode": research_mode,
+            "failure_kind": support.get("failure_kind"),
         },
-        "support": error.to_payload(),
+        "support": support,
         "session": {
             "project_id": session.scope.project_id,
             "work_unit_id": session.scope.work_unit_id,
@@ -496,6 +534,90 @@ def _flow_derived_json(flow_run: FlowRunResult) -> dict[str, Any]:
         "outcome_state": None if outcome is None else outcome.outcome_state,
         "evaluation_verdict": None if evaluation is None else evaluation.evaluation_verdict,
         "transition_result": None if transition is None else transition.transition_result,
+    }
+
+
+def _proposal_summary_json(*, selection_review: object | None, flow_run: FlowRunResult | None) -> dict[str, Any]:
+    proposal_result = None if selection_review is None else getattr(selection_review, "proposal_result", None)
+    if proposal_result is None and flow_run is not None:
+        candidate = flow_run.outputs.get("proposal")
+        if candidate is not None:
+            proposal_result = candidate
+
+    selection_result = None if selection_review is None else getattr(selection_review, "selection_result", None)
+    if selection_result is None and flow_run is not None:
+        candidate = flow_run.outputs.get("selection")
+        if candidate is not None:
+            selection_result = candidate
+
+    if proposal_result is None:
+        return {
+            "available": False,
+            "serious_option_count": None,
+            "selected_proposal_id": None if selection_result is None or selection_result.selected_proposal_id is None else str(selection_result.selected_proposal_id),
+            "non_selection_outcome": None if selection_result is None else selection_result.non_selection_outcome,
+            "scarcity_reason": None,
+            "retained_options": [],
+            "missing_reason": "no proposal summary is available for this run",
+        }
+
+    return {
+        "available": True,
+        "serious_option_count": proposal_result.proposal_count,
+        "selected_proposal_id": None if selection_result is None or selection_result.selected_proposal_id is None else str(selection_result.selected_proposal_id),
+        "non_selection_outcome": None if selection_result is None else selection_result.non_selection_outcome,
+        "scarcity_reason": proposal_result.scarcity_reason,
+        "retained_options": [
+            {
+                "proposal_id": str(option.proposal_id),
+                "proposal_type": option.proposal_type,
+                "summary": option.summary,
+                "assumption_count": len(option.assumptions),
+                "risk_count": len(option.main_risks),
+            }
+            for option in proposal_result.options[:3]
+        ],
+        "missing_reason": None,
+    }
+
+
+def _evaluation_summary_json(*, flow_run: FlowRunResult | None) -> dict[str, Any]:
+    if flow_run is None:
+        return {
+            "available": False,
+            "evaluation_verdict": None,
+            "strongest_reason_summary": None,
+            "evidence_posture_summary": None,
+            "recommended_next_step": None,
+            "missing_reason": "no evaluation summary is available for this run",
+        }
+
+    evaluation = flow_run.outputs.get("evaluation")
+    if evaluation is None:
+        return {
+            "available": False,
+            "evaluation_verdict": None,
+            "strongest_reason_summary": None,
+            "evidence_posture_summary": None,
+            "recommended_next_step": None,
+            "missing_reason": "no evaluation summary is available for this run",
+        }
+
+    override_reasons = getattr(evaluation, "deterministic_override_reasons", ())
+    rationale = getattr(evaluation, "rationale", None)
+    strongest_reason_summary = None
+    if override_reasons:
+        strongest_reason_summary = override_reasons[0]
+    elif isinstance(rationale, str):
+        strongest_reason_summary = _truncate_text(rationale, max_length=180)
+
+    return {
+        "available": True,
+        "evaluation_verdict": evaluation.evaluation_verdict,
+        "strongest_reason_summary": strongest_reason_summary,
+        "evidence_posture_summary": _extract_evidence_posture_summary(rationale if isinstance(rationale, str) else None),
+        "recommended_next_step": evaluation.recommended_next_step,
+        "missing_reason": None,
     }
 
 
@@ -586,3 +708,50 @@ def _missing_review_reason(*, review_available: bool, object_present: bool, abse
     if not review_available:
         return "no selection review chain is available for this run"
     return absent_reason
+
+
+def _extract_evidence_posture_summary(rationale: str | None) -> str | None:
+    if rationale is None:
+        return None
+    match = "with evidence quality "
+    if match not in rationale:
+        return None
+    suffix = rationale.split(match, 1)[1]
+    return suffix.rstrip(".")
+
+
+def _truncate_text(text: str, *, max_length: int) -> str:
+    if len(text) <= max_length:
+        return text
+    return f"{text[: max_length - 3].rstrip()}..."
+
+
+def _research_persistence_note(artifact_locator: str | None) -> str:
+    if artifact_locator is None:
+        return "research artifact persisted as support"
+    return f"research artifact persisted as support at {artifact_locator}"
+
+
+def _latest_research_checkpoint(debug_events: tuple[dict[str, object], ...]) -> str | None:
+    for event in reversed(debug_events):
+        checkpoint = event.get("checkpoint")
+        if isinstance(checkpoint, str) and checkpoint.strip():
+            return checkpoint
+    return None
+
+
+def _latest_research_count(
+    debug_events: tuple[dict[str, object], ...],
+    *field_names: str,
+) -> int | None:
+    for event in reversed(debug_events):
+        payload = event.get("payload")
+        if not isinstance(payload, dict):
+            continue
+        for field_name in field_names:
+            value = payload.get(field_name)
+            if isinstance(value, bool):
+                continue
+            if isinstance(value, int):
+                return value
+    return None

@@ -3,19 +3,25 @@ from dataclasses import dataclass, field
 
 import pytest
 
-from jeff.cognitive.action_formation import ActionFormationRequest, form_action_from_materialized_proposal
-from jeff.cognitive.action_governance_handoff import ActionGovernanceHandoffRequest, handoff_action_to_governance
-from jeff.cognitive.proposal import ProposalResult, ProposalResultOption
-from jeff.cognitive.selection import SelectionRequest, SelectionResult
-from jeff.cognitive.selection.api import SelectionRunSuccess, run_selection_hybrid
-from jeff.cognitive.selection_action_resolution import (
+from jeff.cognitive.post_selection.action_formation import (
+    ActionFormationRequest,
+    form_action_from_materialized_proposal,
+)
+from jeff.cognitive.post_selection.action_resolution import (
     SelectionActionResolutionRequest,
     resolve_selection_action_basis,
 )
-from jeff.cognitive.selection_effective_proposal import (
+from jeff.cognitive.post_selection.effective_proposal import (
     SelectionEffectiveProposalRequest,
     materialize_effective_proposal,
 )
+from jeff.cognitive.post_selection.governance_handoff import (
+    ActionGovernanceHandoffRequest,
+    handoff_action_to_governance,
+)
+from jeff.cognitive.proposal import ProposalResult, ProposalResultOption
+from jeff.cognitive.selection import SelectionRequest, SelectionResult
+from jeff.cognitive.selection.api import SelectionRunSuccess, run_selection_hybrid
 from jeff.core.schemas import Scope
 from jeff.governance import CurrentTruthSnapshot, Policy
 from jeff.infrastructure import ModelInvocationStatus, ModelResponse, ModelUsage

@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Jeff — GUI Wireframe</title>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin:0; padding:0; font-family:'IBM Plex Sans', system-ui, sans-serif; background:#f0eee9; }
+  #root { min-height:100vh; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" src="design-canvas.jsx"></script>
+<script type="text/babel" src="jeff-frames.jsx"></script>
+<script type="text/babel" src="jeff-layer-view.jsx"></script>
+<script type="text/babel">
+/*EDITMODE-BEGIN*/
+const TWEAKS = {
+  "theme": "light",
+  "layout": "triple",
+  "density": "spacious",
+  "accent": "amber"
+};
+/*EDITMODE-END*/
+
+function App() {
+  const [tweaks, setTweaks] = React.useState(TWEAKS);
+  const [editMode, setEditMode] = React.useState(false);
+
+  React.useEffect(() => {
+    const onMsg = (e) => {
+      if (e.data?.type === '__activate_edit_mode') setEditMode(true);
+      if (e.data?.type === '__deactivate_edit_mode') setEditMode(false);
+    };
+    window.addEventListener('message', onMsg);
+    window.parent.postMessage({ type: '__edit_mode_available' }, '*');
+    return () => window.removeEventListener('message', onMsg);
+  }, []);
+
+  const setTweak = (k, v) => {
+    const next = { ...tweaks, [k]: v };
+    setTweaks(next);
+    window.parent.postMessage({ type: '__edit_mode_set_keys', edits: { [k]: v } }, '*');
+  };
+
+  return (
+    <>
+      <DesignCanvas>
+        <div style={{padding:'20px 60px 40px', maxWidth:1400}}>
+          <div style={{fontFamily:'JetBrains Mono, monospace', fontSize:11, color:'#8b8578', letterSpacing:1, marginBottom:8}}>WIREFRAME · V1 · OPERATOR SURFACE</div>
+          <div style={{fontSize:38, fontWeight:600, color:'#1a1816', letterSpacing:-0.8, marginBottom:10}}>Jeff — Desktop GUI Wireframe</div>
+          <div style={{fontSize:15, lineHeight:1.6, color:'#5a544a', maxWidth:760}}>
+            A truthful operator surface for a truth-grounded personal work system. The interface <i>renders</i> and <i>invokes</i>; it never redefines backend meaning. Every screen keeps <b>canonical truth</b>, <b>support artifacts</b>, <b>derived views</b>, and <b>interface-local state</b> visually distinct.
+          </div>
+          <div style={{marginTop:16, display:'flex', gap:8, flexWrap:'wrap', fontFamily:'JetBrains Mono, monospace', fontSize:11}}>
+            {['project → work_unit → run','selected ≠ permitted','approved ≠ applied','execution ≠ truth','memory ≠ state'].map(t=>(
+              <span key={t} style={{background:'#fff', border:'1px solid #e4ddd0', padding:'6px 10px', borderRadius:4, color:'#6b6558'}}>{t}</span>
+            ))}
+          </div>
+        </div>
+
+        <DCSection title="A · Overall layout" subtitle="Triple-pane: projects rail · conversation · inspector/artifacts. Primary v1 shape.">
+          <DCArtboard label="01 · Empty state — new conversation" width={1280} height={820}>
+            <JeffFrame screen="empty" tweaks={tweaks} />
+          </DCArtboard>
+          <DCArtboard label="02 · Active conversation with artifact" width={1280} height={820}>
+            <JeffFrame screen="active" tweaks={tweaks} />
+          </DCArtboard>
+        </DCSection>
+
+        <DCSection title="B · State surfaces" subtitle="Truthful display of governance, blocked, degraded, and inconclusive conditions. The interface must not flatten these.">
+          <DCArtboard label="03 · Governance gate — approval required" width={1280} height={820}>
+            <JeffFrame screen="governance" tweaks={tweaks} />
+          </DCArtboard>
+          <DCArtboard label="04 · Blocked / degraded run" width={1280} height={820}>
+            <JeffFrame screen="blocked" tweaks={tweaks} />
+          </DCArtboard>
+        </DCSection>
+
+        <DCSection title="C · Inspect surfaces" subtitle="Project isolation, run lifecycle, history. Memory is labeled and distinct from current truth.">
+          <DCArtboard label="05 · Project history & work units" width={1280} height={820}>
+            <JeffFrame screen="history" tweaks={tweaks} />
+          </DCArtboard>
+          <DCArtboard label="06 · Settings — policy & readiness" width={1280} height={820}>
+            <JeffFrame screen="settings" tweaks={tweaks} />
+          </DCArtboard>
+        </DCSection>
+
+        <DCSection title="D · Run chat · layer deep-dive" subtitle="Click a work_unit in the sidebar to expand its runs; click a run to open its chat. Each of the 10 layers is inline-expandable for Input / Reasoning / Output.">
+          <DCArtboard label="07 · Run chat with expandable layers" width={1400} height={960}>
+            <RunChatScreen tweaks={tweaks} />
+          </DCArtboard>
+        </DCSection>
+
+        <DCSection title="E · Layout variations" subtitle="Toggle via Tweaks to explore. Same truthfulness contract; different operator surface shape.">
+          <DCArtboard label="V1 · Classic sidebar (dense)" width={1280} height={820}>
+            <JeffFrame screen="active" tweaks={{...tweaks, layout:'classic', density:'dense'}} />
+          </DCArtboard>
+          <DCArtboard label="V2 · Top-nav tabs (spacious)" width={1280} height={820}>
+            <JeffFrame screen="active" tweaks={{...tweaks, layout:'topnav', density:'spacious'}} />
+          </DCArtboard>
+          <DCArtboard label="V3 · Triple-pane dark (dense)" width={1280} height={820}>
+            <JeffFrame screen="active" tweaks={{...tweaks, layout:'triple', theme:'dark', density:'dense'}} />
+          </DCArtboard>
+        </DCSection>
+
+        <DCPostIt top={40} right={80} rotate={2} width={220}>
+          Jeff is not a chatbot. The UI is an operator surface over a governed backbone. Every pane labels its truth class.
+        </DCPostIt>
+      </DesignCanvas>
+
+      {editMode && (
+        <div style={{
+          position:'fixed', bottom:20, right:20, width:280,
+          background:'#1a1816', color:'#f0eee9', padding:16, borderRadius:8,
+          fontFamily:'JetBrains Mono, monospace', fontSize:11, zIndex:1000,
+          boxShadow:'0 8px 32px rgba(0,0,0,0.3)'
+        }}>
+          <div style={{fontSize:10, letterSpacing:1.5, color:'#8b8578', marginBottom:12}}>TWEAKS</div>
+
+          <div style={{marginBottom:12}}>
+            <div style={{marginBottom:6, color:'#c4bdae'}}>theme</div>
+            <div style={{display:'flex', gap:4}}>
+              {['light','dark'].map(v => (
+                <button key={v} onClick={()=>setTweak('theme',v)} style={tbStyle(tweaks.theme===v)}>{v}</button>
+              ))}
+            </div>
+          </div>
+
+          <div style={{marginBottom:12}}>
+            <div style={{marginBottom:6, color:'#c4bdae'}}>layout</div>
+            <div style={{display:'flex', gap:4, flexWrap:'wrap'}}>
+              {['triple','classic','topnav'].map(v => (
+                <button key={v} onClick={()=>setTweak('layout',v)} style={tbStyle(tweaks.layout===v)}>{v}</button>
+              ))}
+            </div>
+          </div>
+
+          <div style={{marginBottom:12}}>
+            <div style={{marginBottom:6, color:'#c4bdae'}}>density</div>
+            <div style={{display:'flex', gap:4}}>
+              {['spacious','dense'].map(v => (
+                <button key={v} onClick={()=>setTweak('density',v)} style={tbStyle(tweaks.density===v)}>{v}</button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <div style={{marginBottom:6, color:'#c4bdae'}}>accent</div>
+            <div style={{display:'flex', gap:4}}>
+              {['amber','sage','slate'].map(v => (
+                <button key={v} onClick={()=>setTweak('accent',v)} style={tbStyle(tweaks.accent===v)}>{v}</button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+function tbStyle(active) {
+  return {
+    background: active ? '#d4a574' : 'transparent',
+    color: active ? '#1a1816' : '#c4bdae',
+    border: '1px solid ' + (active ? '#d4a574' : '#3a3630'),
+    padding: '4px 10px', borderRadius: 3,
+    fontFamily: 'inherit', fontSize: 10, cursor: 'pointer',
+    letterSpacing: 0.5
+  };
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

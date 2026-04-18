@@ -1,7 +1,7 @@
 from jeff.action import GovernedExecutionRequest, normalize_outcome
 from jeff.action.execution import ExecutionResult
 from jeff.cognitive import SelectionResult, evaluate_outcome
-from jeff.cognitive.proposal.contracts import ProposalResultOption
+from jeff.cognitive.proposal.contracts import ProposalResult, ProposalResultOption
 from jeff.contracts import Action
 from jeff.core.schemas import Scope
 from jeff.core.state import bootstrap_global_state
@@ -84,17 +84,35 @@ def build_flow_run(
     reason_summary: str | None = None,
     selected_proposal_id: str = "proposal-1",
 ) -> FlowRunResult:
-    result_option = ProposalResultOption(
-        option_index=1,
-        proposal_id=selected_proposal_id,
-        proposal_type="direct_action",
-        title="Bounded CLI-visible action",
-        why_now="Testing the bounded flow.",
-        summary="Bounded CLI-visible action",
+    proposal_result = ProposalResult(
+        request_id="proposal-request-1",
+        scope=scope,
+        options=(
+            ProposalResultOption(
+                option_index=1,
+                proposal_id=selected_proposal_id,
+                proposal_type="direct_action",
+                title="Bounded CLI-visible action",
+                why_now="Testing the bounded flow.",
+                summary="Bounded CLI-visible action",
+                assumptions=("Current scope remains stable.",),
+                main_risks=("A bounded regression risk remains.",),
+            ),
+            ProposalResultOption(
+                option_index=2,
+                proposal_id="proposal-2" if selected_proposal_id != "proposal-2" else "proposal-3",
+                proposal_type="clarify",
+                title="Bounded clarification follow-up",
+                why_now="Keeps a second serious option visible for operator review.",
+                summary="Bounded clarification follow-up",
+                assumptions=("Clarification will reduce visible uncertainty.",),
+                main_risks=("Clarification may slow immediate delivery.",),
+            ),
+        ),
     )
     selection = SelectionResult(
         selection_id="selection-1",
-        considered_proposal_ids=(result_option.proposal_id,),
+        considered_proposal_ids=tuple(option.proposal_id for option in proposal_result.options),
         selected_proposal_id=selected_proposal_id,
         rationale="One bounded option remains under review.",
     )
@@ -119,6 +137,7 @@ def build_flow_run(
         truth=CurrentTruthSnapshot(scope=scope, state_version=3),
     )
     outputs: dict[str, object] = {
+        "proposal": proposal_result,
         "selection": selection,
         "governance": governance,
     }

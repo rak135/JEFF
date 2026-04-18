@@ -2,19 +2,25 @@ import json
 
 import pytest
 
-from jeff.cognitive.action_formation import ActionFormationRequest, form_action_from_materialized_proposal
-from jeff.cognitive.action_governance_handoff import ActionGovernanceHandoffRequest, handoff_action_to_governance
-from jeff.cognitive.proposal import ProposalResult, ProposalResultOption
-from jeff.cognitive.selection import SelectionResult
-from jeff.cognitive.selection_action_resolution import (
+from jeff.cognitive.post_selection.action_formation import (
+    ActionFormationRequest,
+    form_action_from_materialized_proposal,
+)
+from jeff.cognitive.post_selection.action_resolution import (
     SelectionActionResolutionRequest,
     resolve_selection_action_basis,
 )
-from jeff.cognitive.selection_effective_proposal import (
+from jeff.cognitive.post_selection.effective_proposal import (
     SelectionEffectiveProposalRequest,
     materialize_effective_proposal,
 )
-from jeff.cognitive.selection_override import OperatorSelectionOverrideRequest, build_operator_selection_override
+from jeff.cognitive.post_selection.governance_handoff import (
+    ActionGovernanceHandoffRequest,
+    handoff_action_to_governance,
+)
+from jeff.cognitive.post_selection.override import OperatorSelectionOverrideRequest, build_operator_selection_override
+from jeff.cognitive.proposal import ProposalResult, ProposalResultOption
+from jeff.cognitive.selection import SelectionResult
 from jeff.core.schemas import Scope
 from jeff.governance import CurrentTruthSnapshot, Policy
 from jeff.interface import JeffCLI
@@ -31,6 +37,7 @@ def test_selection_show_renders_original_selection_and_override_separately() -> 
 
     assert "SELECTION REVIEW run_id=run-1" in text
     assert "[selection] disposition=selected selected_proposal_id=proposal-1" in text
+    assert "[proposal] serious_option_count=2 selected_proposal_id=proposal-1" in text
     assert "[override] exists=True chosen_proposal_id=proposal-2" in text
     assert "[resolved_choice] effective_source=operator_override effective_proposal_id=proposal-2" in text
     assert "[action_formation] action_formed=True" in text
@@ -47,6 +54,9 @@ def test_selection_show_json_preserves_structured_truth_classes() -> None:
     assert payload["view"] == "selection_review"
     assert payload["selection"]["disposition"] == "selected"
     assert payload["selection"]["selected_proposal_id"] == "proposal-1"
+    assert payload["proposal"]["available"] is True
+    assert payload["proposal"]["serious_option_count"] == 2
+    assert payload["proposal"]["retained_options"][0]["assumption_count"] == 0
     assert payload["override"]["exists"] is True
     assert payload["override"]["chosen_proposal_id"] == "proposal-2"
     assert payload["resolved_choice"]["effective_source"] == "operator_override"
@@ -68,10 +78,11 @@ def test_selection_show_reports_missing_downstream_objects_honestly() -> None:
     text = cli.run_one_shot("/selection show run-1")
 
     assert "[selection] disposition=selected selected_proposal_id=proposal-1" in text
-    assert "[override] missing=no selection review chain is available for this run" in text
-    assert "[resolved_choice] missing=no selection review chain is available for this run" in text
-    assert "[action_formation] missing=no selection review chain is available for this run" in text
-    assert "[governance_handoff] missing=no selection review chain is available for this run" in text
+    assert "[proposal] serious_option_count=2 selected_proposal_id=proposal-1" in text
+    assert "[override] note=no override recorded" in text
+    assert "[resolved_choice] effective_source=selection effective_proposal_id=proposal-1" in text
+    assert "[action_formation] action_formed=True" in text
+    assert "[governance_handoff] missing=governance handoff has not been recorded" in text
 
 
 def test_selection_show_is_read_only_and_does_not_add_write_behavior() -> None:

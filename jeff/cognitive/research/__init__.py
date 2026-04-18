@@ -17,6 +17,7 @@ from .debug import (
 )
 from .documents import build_document_evidence_pack, collect_document_sources, run_document_research
 from .errors import (
+    ResearchOperatorSurfaceError,
     ResearchProvenanceValidationError,
     ResearchSynthesisError,
     ResearchSynthesisRuntimeError,
@@ -50,6 +51,7 @@ __all__ = [
     "ResearchDebugEmitter",
     "ResearchFinding",
     "ResearchMemoryHandoffInput",
+    "ResearchOperatorSurfaceError",
     "ResearchProvenanceValidationError",
     "ResearchRequest",
     "ResearchSynthesisError",

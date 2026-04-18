@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from jeff.cognitive import ResearchArtifactStore, ResearchRequest, collect_document_sources
+from jeff.cognitive import ResearchArtifactStore, ResearchOperatorSurfaceError, ResearchRequest, collect_document_sources
 from jeff.cognitive.research import web as web_module
 from jeff.infrastructure import (
     AdapterFactoryConfig,
@@ -27,8 +27,12 @@ def test_docs_command_parses_correctly(tmp_path: Path) -> None:
     result = cli.execute(f'/research docs "{question}" "{document}"')
 
     records = result.context.research_artifact_store.list_records(project_id="project-1", work_unit_id="wu-1")
+    artifact_locator = str(result.context.research_artifact_store.path_for(records[0].artifact_id).resolve())
 
     assert "RESEARCH docs project_id=project-1 work_unit_id=wu-1 run_id=run-1" in result.text
+    assert f"artifact_locator={artifact_locator}" in result.text
+    assert "source_count=1" in result.text
+    assert f"persistence=research artifact persisted as support at {artifact_locator}" in result.text
     assert records[0].question == question
     assert records[0].source_mode == "local_documents"
 
@@ -141,8 +145,76 @@ def test_research_json_payload_keeps_support_distinct_from_truth(tmp_path: Path)
     assert set(payload["truth"]) == {"project_id", "work_unit_id", "run_id"}
     assert "artifact_id" not in payload["truth"]
     assert payload["support"]["artifact_id"].startswith("research-")
+    assert payload["support"]["artifact_locator"].endswith(f"{payload['support']['artifact_id']}.json")
+    assert payload["support"]["source_count"] == 1
+    assert payload["support"]["artifact_locator"] in payload["support"]["persistence_note"]
     assert payload["support"]["summary"] == "The documents support a bounded rollout."
     assert payload["derived"]["memory_handoff_result"] is None
+
+
+def test_docs_command_with_missing_path_reports_specific_missing_path(tmp_path: Path) -> None:
+    question = "What does the bounded plan support?"
+    cli, _ = _build_docs_cli(tmp_path, question=question)
+    missing_path = tmp_path / "missing-plan.md"
+
+    cli.run_one_shot("/project use project-1")
+    cli.run_one_shot("/work use wu-1")
+
+    with pytest.raises(ResearchOperatorSurfaceError) as exc_info:
+        cli.run_one_shot(f'/research docs "{question}" "{missing_path}"')
+
+    message = str(exc_info.value)
+    assert "research input problem" in message
+    assert "all explicit document paths were missing" in message
+    assert str(missing_path) in message
+
+
+def test_docs_command_with_mixed_valid_and_missing_paths_reports_missing_ones_clearly(tmp_path: Path) -> None:
+    question = "What does the bounded plan support?"
+    cli, document = _build_docs_cli(tmp_path, question=question)
+    missing_path = tmp_path / "missing-plan.md"
+
+    cli.run_one_shot("/project use project-1")
+    cli.run_one_shot("/work use wu-1")
+
+    with pytest.raises(ResearchOperatorSurfaceError) as exc_info:
+        cli.run_one_shot(f'/research docs "{question}" "{document}" "{missing_path}"')
+
+    message = str(exc_info.value)
+    assert "research input problem" in message
+    assert "some explicit document paths were missing" in message
+    assert str(missing_path) in message
+    assert "provided_inputs=2" in message
+
+
+def test_docs_missing_path_in_json_mode_preserves_structured_context(tmp_path: Path) -> None:
+    question = "What does the bounded plan support?"
+    cli, _ = _build_docs_cli(tmp_path, question=question)
+    missing_path = tmp_path / "missing-plan.md"
+
+    cli.run_one_shot("/project use project-1")
+    cli.run_one_shot("/work use wu-1")
+
+    payload = json.loads(cli.run_one_shot(f'/research docs "{question}" "{missing_path}"', json_output=True))
+
+    assert payload["view"] == "research_error"
+    assert payload["derived"]["failure_kind"] == "input_problem"
+    assert payload["support"]["error_code"] == "missing_input_paths"
+    assert payload["support"]["question"] == question
+    assert payload["support"]["provided_input_count"] == 1
+    assert payload["support"]["missing_inputs"] == [str(missing_path)]
+
+
+def test_help_keeps_existing_research_command_surface_without_artifact_commands() -> None:
+    state, _ = build_state_with_runs(run_specs=())
+    cli = JeffCLI(context=InterfaceContext(state=state))
+
+    help_text = cli.run_one_shot("/help")
+
+    assert '/research docs "' in help_text
+    assert '/research web "' in help_text
+    assert "/artifacts" not in help_text
+    assert "/research open" not in help_text
 
 
 def _build_docs_cli(tmp_path: Path, *, question: str) -> tuple[JeffCLI, Path]:

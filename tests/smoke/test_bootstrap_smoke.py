@@ -10,13 +10,14 @@ def test_demo_context_bootstraps_with_project_run_and_flow() -> None:
     assert "wu-1" in context.state.projects["project-1"].work_units
     assert "run-1" in context.state.projects["project-1"].work_units["wu-1"].runs
     assert "run-1" in context.flow_runs
+    assert "run-1" in context.selection_reviews
 
 
 def test_startup_preflight_reports_operator_entry_ready() -> None:
     checks = run_startup_preflight()
 
     assert "package imports resolved" in checks
-    assert "demo interface context bootstrapped" in checks
+    assert "persisted runtime interface context bootstrapped" in checks
     assert any("CLI entry surface" in check for check in checks)
 
 
@@ -25,7 +26,7 @@ def test_module_entry_help_path_boots_cleanly() -> None:
 
     assert result.returncode == 0
     assert "python -m jeff --command \"/help\"" in result.stdout
-    assert "explicit in-memory demo workspace" in result.stdout
+    assert "persisted runtime workspace under .jeff_runtime/" in result.stdout
 
 
 def test_module_entry_non_tty_does_not_hang_and_explains_next_step() -> None:

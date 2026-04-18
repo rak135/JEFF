@@ -6,8 +6,8 @@ from dataclasses import dataclass
 
 from jeff.core.schemas import ProposalId, SelectionId, coerce_proposal_id, coerce_selection_id
 
-from .selection import SelectionDisposition, SelectionResult
-from .types import require_text
+from ..selection import SelectionDisposition, SelectionResult
+from ..types import require_text
 
 
 @dataclass(frozen=True, slots=True)

@@ -2,24 +2,30 @@ import json
 
 import pytest
 
-from jeff.cognitive.action_formation import ActionFormationRequest, form_action_from_materialized_proposal
-from jeff.cognitive.action_governance_handoff import ActionGovernanceHandoffRequest, handoff_action_to_governance
-from jeff.cognitive.proposal import ProposalResult, ProposalResultOption
-from jeff.cognitive.selection import SelectionResult
-from jeff.cognitive.selection_action_resolution import (
+from jeff.cognitive.post_selection.action_formation import (
+    ActionFormationRequest,
+    form_action_from_materialized_proposal,
+)
+from jeff.cognitive.post_selection.action_resolution import (
     SelectionActionResolutionRequest,
     resolve_selection_action_basis,
 )
-from jeff.cognitive.selection_effective_proposal import (
+from jeff.cognitive.post_selection.effective_proposal import (
     SelectionEffectiveProposalRequest,
     materialize_effective_proposal,
 )
+from jeff.cognitive.post_selection.governance_handoff import (
+    ActionGovernanceHandoffRequest,
+    handoff_action_to_governance,
+)
+from jeff.cognitive.proposal import ProposalResult, ProposalResultOption
+from jeff.cognitive.selection import SelectionResult
 from jeff.core.schemas import Scope
 from jeff.governance import CurrentTruthSnapshot, Policy
 from jeff.interface import JeffCLI
 from jeff.interface.commands import InterfaceContext, SelectionReviewRecord
 
-from tests.fixtures.cli import build_state_with_run
+from tests.fixtures.cli import build_flow_run, build_state_with_run
 
 
 def test_selection_override_command_creates_override_and_truthful_receipt() -> None:
@@ -92,6 +98,24 @@ def test_selection_override_requires_existing_selection_review_data() -> None:
 
     with pytest.raises(ValueError, match=f"no selection review data is available for run {scope.run_id}"):
         cli.run_one_shot('/selection override proposal-2 --why "No review chain exists." run-1')
+
+
+def test_selection_override_works_when_review_chain_is_materialized_from_lawful_flow_data() -> None:
+    state, scope = build_state_with_run()
+    context = InterfaceContext(state=state, flow_runs={str(scope.run_id): build_flow_run(scope)})
+    cli = JeffCLI(context=context)
+
+    payload = json.loads(
+        cli.run_one_shot(
+            '/selection override proposal-2 --why "Use the lawful alternate proposal." run-1',
+            json_output=True,
+        )
+    )
+
+    assert payload["override"]["chosen_proposal_id"] == "proposal-2"
+    assert payload["resolved_choice"]["effective_source"] == "operator_override"
+    assert payload["action_formation"]["action_formed"] is False
+    assert payload["action_formation"]["no_action_reason"] is not None
 
 
 def test_selection_clear_override_behavior_is_not_added() -> None:

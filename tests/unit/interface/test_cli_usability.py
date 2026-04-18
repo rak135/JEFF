@@ -82,9 +82,12 @@ def test_help_text_explains_normal_cli_flow() -> None:
 
     assert "Jeff CLI is command-driven." in text
     assert "Plain text like 'hello' is not a supported command." in text
-    assert "5. /inspect" in text
-    assert "Manual history/debug:" in text
+    assert "Primary flow:" in text
+    assert "History/debug:" in text
+    assert "Conditional requests:" in text
     assert "Current startup uses explicit in-memory demo state and can load local runtime config for research." in text
+    assert "/proposal show" not in text
+    assert "/evaluation show" not in text
 
 
 def test_readability_helpers_keep_plain_fallback_and_optional_color() -> None:

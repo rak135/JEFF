@@ -38,10 +38,17 @@
 # Current Implementation Reality
 
 - The stable operator start path is `python -m jeff`.
-- Startup bootstraps an explicit in-memory demo workspace and supports help, bootstrap checks, one-shot commands, and an interactive shell in a real terminal.
-- Startup can now also load an explicit local `jeff.runtime.toml` file and attach research runtime dependencies when present.
+- Startup now defaults to a persisted runtime/workspace home under `.jeff_runtime/` and supports help, bootstrap checks, one-shot commands, and an interactive shell in a real terminal.
+- One-shot startup now also accepts local scope flags (`--project`, `--work`, `--run`) and may execute repeated `--command` entries inside one temporary CLI session without mutating canonical truth.
+- Startup now loads persisted canonical state when present, initializes and persists the first runtime state when absent, and keeps runtime support records for flow runs and selection reviews across restarts.
+- Startup can also load an explicit local `jeff.runtime.toml` file and attach research runtime dependencies when present.
 - Session scope is local CLI state, not canonical truth mutation.
 - The CLI now includes `/research docs` and `/research web` as a thin operator surface over the existing research backend.
+- `/inspect` now ensures lawful selection-review visibility when backend data exists for the current run instead of requiring a separate materialization command.
+- `/show` now remains the main run-detail surface and includes bounded proposal and evaluation support summaries when that data is lawfully available.
+- `/selection show` now remains the deep review surface and includes bounded proposal detail alongside selection, override, resolved choice, Action formation, and governance handoff.
+- Research artifacts now persist under `.jeff_runtime/artifacts/research/` with legacy read compatibility for the older `.jeff_runtime/research_artifacts/` location.
+- No new slash-command families were added for this runtime slice.
 - `/mode debug` now emits bounded live research-debug checkpoints during research runs so operators can see synthesis, repair, remap, and provenance stages without changing backend semantics.
 - Ad-hoc research is not projectless: when no project scope is selected, the interface anchors the request into the built-in `general_research` project plus a bounded derived work unit and lawful run.
 - When runtime config is absent, non-research CLI surfaces still work and research remains explicitly unavailable rather than silently fabricated.
@@ -59,7 +66,6 @@
 
 - GUI is deferred.
 - Broad API bridge is deferred.
-- Startup still uses explicit demo bootstrap only; there is no persisted operator runtime.
 - There is still no scheduling, orchestrator-integrated research workflow, autonomous continuation, or cross-project retrieval exception in the interface layer.
 
 # Next Continuation Steps

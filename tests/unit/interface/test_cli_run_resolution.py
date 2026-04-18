@@ -17,7 +17,9 @@ def test_inspect_auto_binds_existing_run_in_selected_work_unit() -> None:
 
     assert "auto-selected current run: run-1" in text
     assert "RUN run-1" in text
+    assert "[support][proposal] serious_option_count=2" in text
     assert cli.session.scope.run_id == "run-1"
+    assert "run-1" in cli.execute("/inspect").context.selection_reviews
 
 
 def test_inspect_creates_new_run_through_transition_path_when_none_exist() -> None:
@@ -90,10 +92,21 @@ def test_help_text_marks_run_commands_as_manual_history_debug_path() -> None:
 
     text = cli.run_one_shot("/help")
 
-    assert "5. /inspect" in text
-    assert "Manual history/debug:" in text
+    assert "Primary flow:" in text
+    assert "History/debug:" in text
     assert "- /run list" in text
     assert "- /run use <run_id>" in text
+
+
+def test_run_command_does_not_gain_objective_launcher_meaning() -> None:
+    state, _ = build_state_with_runs()
+    cli = JeffCLI(context=InterfaceContext(state=state))
+
+    cli.run_one_shot("/project use project-1")
+    cli.run_one_shot("/work use wu-1")
+
+    with pytest.raises(ValueError, match="run command must be 'run list' or 'run use <run_id>'"):
+        cli.run_one_shot("/run compare heat pump options")
 
 
 def _add_work_unit(state: object, *, work_unit_id: str, objective: str) -> object:

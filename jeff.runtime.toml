@@ -2,7 +2,7 @@
 default_adapter_id = "ollama_default"
 
 [research]
-artifact_store_root = ".jeff_runtime/research_artifacts"
+artifact_store_root = ".jeff_runtime/artifacts/research"
 enable_memory_handoff = true
 
 [[adapters]]
@@ -11,10 +11,10 @@ provider_kind = "ollama"
 provider_name = "ollama"
 model_name = "gemma4:31b-cloud"
 base_url = "http://127.0.0.1:11434"
-timeout_seconds = 60
+timeout_seconds = 300
 
 [adapters.provider_options]
-context_length = 8192
+context_length = 16384
 
 [[adapters]]
 adapter_id = "ollama_research"
@@ -22,7 +22,7 @@ provider_kind = "ollama"
 provider_name = "ollama"
 model_name = "gemma4:31b-cloud"
 base_url = "http://127.0.0.1:11434"
-timeout_seconds = 120
+timeout_seconds = 300
 
 [adapters.provider_options]
 context_length = 16384

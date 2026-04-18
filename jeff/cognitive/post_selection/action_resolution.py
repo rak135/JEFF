@@ -7,9 +7,9 @@ from typing import Literal
 
 from jeff.core.schemas import ProposalId, SelectionId, coerce_proposal_id, coerce_selection_id
 
-from .selection import SelectionDisposition, SelectionResult
-from .selection_override import OperatorSelectionOverride
-from .types import require_text
+from ..selection import SelectionDisposition, SelectionResult
+from ..types import require_text
+from .override import OperatorSelectionOverride
 
 SelectionActionResolutionSource = Literal["selection", "operator_override", "none"]
 

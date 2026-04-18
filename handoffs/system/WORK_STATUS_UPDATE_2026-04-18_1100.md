@@ -1,0 +1,21 @@
+## 2026-04-18 11:00 â€” Improved research error and result surfacing
+
+- Scope: research runtime/operator error quality and result projection
+- Done:
+  - improved docs research path validation to report exact missing path inputs and distinguish some-vs-all missing cases
+  - added structured operator-surface research errors for input, source-acquisition, synthesis, projection, and render failures
+  - surfaced artifact locator, source count, and clearer persistence text in existing research result JSON and CLI render
+  - preserved runtime failure class detail while adding question, stage/checkpoint, and input-count context to research errors
+- Validation: targeted unit and integration research interface suites passed (`42 passed`)
+- Current state: existing `/research docs` and `/research web` surfaces now expose sharper failure context and more useful persisted-artifact details without adding new commands
+- Next step: operator validation can re-check the missing-path and persisted-artifact experience on the real CLI path
+- Files:
+  - jeff/cognitive/research/documents.py
+  - jeff/cognitive/research/errors.py
+  - jeff/cognitive/research/persistence.py
+  - jeff/interface/commands.py
+  - jeff/interface/json_views.py
+  - jeff/interface/render.py
+  - tests/unit/interface/test_research_commands.py
+  - tests/unit/interface/test_research_failure_json_mode.py
+  - tests/integration/test_cli_research_failure_surface.py

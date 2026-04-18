@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import time
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
@@ -13,6 +14,7 @@ from typing import Any
 
 from jeff.infrastructure import InfrastructureServices
 
+from ..types import require_text
 from .contracts import (
     EvidenceItem,
     EvidencePack,
@@ -49,11 +51,36 @@ class ResearchArtifactRecord:
     schema_version: str = "1.0"
 
 
+_SUMMARY_SECTION_HEADERS = frozenset(
+    {
+        "SUMMARY:",
+        "FINDINGS:",
+        "INFERENCES:",
+        "UNCERTAINTIES:",
+        "RECOMMENDATION:",
+    }
+)
+_NUMBERED_LIST_PREFIX = re.compile(r"^\d+\.\s+")
+
+
 class ResearchArtifactStore:
-    def __init__(self, root_dir: Path | str) -> None:
+    def __init__(
+        self,
+        root_dir: Path | str,
+        *,
+        legacy_root_dirs: tuple[Path | str, ...] = (),
+    ) -> None:
         self.root_dir = Path(root_dir)
         self._artifacts_dir = self.root_dir
         self._artifacts_dir.mkdir(parents=True, exist_ok=True)
+        self._legacy_artifacts_dirs = tuple(
+            legacy_dir
+            for legacy_dir in (Path(candidate) for candidate in legacy_root_dirs)
+            if legacy_dir != self._artifacts_dir
+        )
+
+    def path_for(self, artifact_id: str) -> Path:
+        return self._path_for(artifact_id)
 
     def save(self, record: ResearchArtifactRecord, *, debug_emitter: ResearchDebugEmitter | None = None) -> Path:
         emit_research_debug_event(
@@ -83,27 +110,8 @@ class ResearchArtifactStore:
             "artifact_store_load_started",
             artifact_id=artifact_id,
         )
-        path = self._path_for(artifact_id)
-        try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError as exc:
-            emit_research_debug_event(
-                debug_emitter,
-                "artifact_store_load_failed",
-                artifact_id=artifact_id,
-                reason="malformed persisted research artifact file",
-            )
-            raise ValueError(f"malformed persisted research artifact file: {artifact_id}") from exc
-        try:
-            record = _record_from_payload(payload)
-        except ValueError as exc:
-            emit_research_debug_event(
-                debug_emitter,
-                "artifact_store_load_failed",
-                artifact_id=artifact_id,
-                reason=str(exc),
-            )
-            raise
+        path = self._existing_path_for(artifact_id)
+        record = self._load_path(path, debug_emitter=debug_emitter)
         emit_research_debug_event(
             debug_emitter,
             "artifact_store_load_succeeded",
@@ -120,7 +128,16 @@ class ResearchArtifactStore:
         work_unit_id: str | None = None,
         run_id: str | None = None,
     ) -> tuple[ResearchArtifactRecord, ...]:
-        records = [self.load(path.stem) for path in sorted(self._artifacts_dir.glob("*.json"))]
+        records: list[ResearchArtifactRecord] = []
+        seen_artifact_ids: set[str] = set()
+        for directory in (self._artifacts_dir, *self._legacy_artifacts_dirs):
+            if not directory.exists():
+                continue
+            for path in sorted(directory.glob("*.json")):
+                if path.stem in seen_artifact_ids:
+                    continue
+                records.append(self._load_path(path))
+                seen_artifact_ids.add(path.stem)
         filtered = [
             record
             for record in records
@@ -133,6 +150,43 @@ class ResearchArtifactStore:
 
     def _path_for(self, artifact_id: str) -> Path:
         return self._artifacts_dir / f"{artifact_id}.json"
+
+    def _existing_path_for(self, artifact_id: str) -> Path:
+        primary_path = self._path_for(artifact_id)
+        if primary_path.exists():
+            return primary_path
+        for legacy_dir in self._legacy_artifacts_dirs:
+            legacy_path = legacy_dir / f"{artifact_id}.json"
+            if legacy_path.exists():
+                return legacy_path
+        return primary_path
+
+    def _load_path(
+        self,
+        path: Path,
+        *,
+        debug_emitter: ResearchDebugEmitter | None = None,
+    ) -> ResearchArtifactRecord:
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            emit_research_debug_event(
+                debug_emitter,
+                "artifact_store_load_failed",
+                artifact_id=path.stem,
+                reason="malformed persisted research artifact file",
+            )
+            raise ValueError(f"malformed persisted research artifact file: {path.stem}") from exc
+        try:
+            return _record_from_payload(payload)
+        except ValueError as exc:
+            emit_research_debug_event(
+                debug_emitter,
+                "artifact_store_load_failed",
+                artifact_id=path.stem,
+                reason=str(exc),
+            )
+            raise
 
 
 def build_research_artifact_record(
@@ -205,12 +259,34 @@ def build_research_artifact_record(
 
 
 def validate_research_artifact_record(record: ResearchArtifactRecord) -> None:
+    _validate_research_summary(record.summary)
     validate_research_provenance(
         findings=record.findings,
         source_ids=record.source_ids,
         source_items=record.source_items,
         evidence_items=record.evidence_items,
     )
+
+
+def _validate_research_summary(summary: str) -> None:
+    normalized_summary = require_text(summary, field_name="summary")
+    stripped_summary = normalized_summary.strip()
+    if stripped_summary.startswith(("{", "[")):
+        raise ValueError("summary must be concise prose, not structured dump content")
+    if "```" in normalized_summary:
+        raise ValueError("summary must be concise prose, not fenced report content")
+
+    non_empty_lines = [line.strip() for line in normalized_summary.splitlines() if line.strip()]
+    if any(line.upper() in _SUMMARY_SECTION_HEADERS for line in non_empty_lines):
+        raise ValueError("summary must be concise prose, not a full report dump")
+    if any(
+        line.startswith(("- ", "* ", "+ "))
+        or _NUMBERED_LIST_PREFIX.match(line) is not None
+        or line.startswith("cites: ")
+        or line.startswith("- text: ")
+        for line in non_empty_lines
+    ):
+        raise ValueError("summary must be concise prose, not a bullet or report dump")
 
 
 def persist_research_artifact(

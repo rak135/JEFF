@@ -1,4 +1,4 @@
-from jeff.interface import JeffCLI
+from jeff.interface import CliSession, JeffCLI, SessionScope
 
 from tests.fixtures.cli import build_interface_context, build_interface_context_with_flow
 
@@ -71,3 +71,18 @@ def test_scope_show_guides_operator_toward_next_valid_scope_step() -> None:
     cli.run_one_shot("/work use wu-1")
     text = cli.run_one_shot("/scope show")
     assert "[hint] next=/inspect (auto-selects or creates a run) or /run list for manual history/debug" in text
+
+
+def test_seeded_session_scope_is_local_only_and_does_not_mutate_canonical_state() -> None:
+    context, _ = build_interface_context_with_flow()
+    state_before = context.state
+    cli = JeffCLI(
+        context=context,
+        session=CliSession(scope=SessionScope(project_id="project-1", work_unit_id="wu-1", run_id="run-1")),
+    )
+
+    text = cli.run_one_shot("/show")
+
+    assert "RUN run-1" in text
+    assert cli.session.scope.run_id == "run-1"
+    assert context.state is state_before

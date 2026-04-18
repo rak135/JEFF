@@ -127,6 +127,37 @@ def render_run_show(payload: dict[str, Any]) -> str:
             f"[support] routing route_kind={routing['route_kind']} routed_outcome={routing['routed_outcome']} "
             f"source_stage={routing['source_stage']} reason={routing['reason_summary']}"
         )
+    proposal = support["proposal_summary"]
+    if proposal["available"]:
+        lines.append(
+            f"[support][proposal] serious_option_count={proposal['serious_option_count']} "
+            f"selected_proposal_id={proposal['selected_proposal_id'] or '-'} "
+            f"non_selection_outcome={proposal['non_selection_outcome'] or '-'}"
+        )
+        if proposal["scarcity_reason"] is not None:
+            lines.append(f"[support][proposal] scarcity_reason={proposal['scarcity_reason']}")
+        for option in proposal["retained_options"]:
+            lines.append(
+                f"- proposal {option['proposal_id']} type={option['proposal_type']} "
+                f"assumptions={option['assumption_count']} risks={option['risk_count']} "
+                f"summary={_compact_text(option['summary'])}"
+            )
+    else:
+        lines.append(f"[support][proposal] missing={proposal['missing_reason']}")
+
+    evaluation = support["evaluation_summary"]
+    if evaluation["available"]:
+        lines.append(
+            f"[support][evaluation] verdict={evaluation['evaluation_verdict']} "
+            f"recommended_next_step={evaluation['recommended_next_step']}"
+        )
+        if evaluation["evidence_posture_summary"] is not None:
+            lines.append(f"[support][evaluation] evidence={evaluation['evidence_posture_summary']}")
+        if evaluation["strongest_reason_summary"] is not None:
+            lines.append(f"[support][evaluation] reason={_compact_text(evaluation['strongest_reason_summary'])}")
+    else:
+        lines.append(f"[support][evaluation] missing={evaluation['missing_reason']}")
+
     lines.append("[support] recent_events")
     for event in support["recent_events"]:
         lines.append(f"- #{event['ordinal']} {event['stage'] or '-'} {event['event_type']} {event['summary']}")
@@ -135,6 +166,7 @@ def render_run_show(payload: dict[str, Any]) -> str:
 
 def render_selection_review(payload: dict[str, Any]) -> str:
     truth = payload["truth"]
+    proposal = payload["proposal"]
     selection = payload["selection"]
     override = payload["override"]
     resolved = payload["resolved_choice"]
@@ -153,8 +185,27 @@ def render_selection_review(payload: dict[str, Any]) -> str:
             f"selected_proposal_id={selection['selected_proposal_id'] or '-'} "
             f"non_selection_outcome={selection['non_selection_outcome'] or '-'}"
         )
+        if payload["support"]["selection_rationale_summary"] is not None:
+            lines.append(f"[selection] rationale={payload['support']['selection_rationale_summary']}")
     else:
         lines.append(f"[selection] missing={selection['missing_reason']}")
+
+    if proposal["available"]:
+        lines.append(
+            f"[proposal] serious_option_count={proposal['serious_option_count']} "
+            f"selected_proposal_id={proposal['selected_proposal_id'] or '-'} "
+            f"non_selection_outcome={proposal['non_selection_outcome'] or '-'}"
+        )
+        if proposal["scarcity_reason"] is not None:
+            lines.append(f"[proposal] scarcity_reason={proposal['scarcity_reason']}")
+        for option in proposal["retained_options"]:
+            lines.append(
+                f"- retained {option['proposal_id']} type={option['proposal_type']} "
+                f"assumptions={option['assumption_count']} risks={option['risk_count']} "
+                f"summary={_compact_text(option['summary'])}"
+            )
+    else:
+        lines.append(f"[proposal] missing={proposal['missing_reason']}")
 
     if override["available"]:
         lines.append(
@@ -316,6 +367,8 @@ def render_research_result(payload: dict[str, Any]) -> str:
             f"project_id={truth['project_id']} work_unit_id={truth['work_unit_id']} run_id={truth['run_id']}"
         ),
         f"artifact_id={support['artifact_id']}",
+        f"artifact_locator={support['artifact_locator'] or '-'}",
+        f"source_count={support['source_count']}",
         f"question={support['question']}",
         f"summary={support['summary']}",
         "[support] findings",
@@ -335,7 +388,7 @@ def render_research_result(payload: dict[str, Any]) -> str:
         lines.append("- none")
 
     lines.append(f"recommendation={support['recommendation'] or '-'}")
-    lines.append("persistence=research artifact persisted as support by default")
+    lines.append(f"persistence={support['persistence_note']}")
 
     if not derived["handoff_memory_requested"]:
         lines.append("memory_handoff=not requested")
@@ -396,48 +449,39 @@ def render_help() -> str:
             "Jeff CLI is command-driven.",
             "Use slash commands like /help or /project list.",
             "Plain text like 'hello' is not a supported command.",
-            "Normal flow:",
-            "1. /project list",
-            "2. /project use <project_id>",
-            "3. /work list",
-            "4. /work use <work_unit_id>",
-            "5. /inspect",
-            "6. /trace [run_id] or /lifecycle [run_id]",
-            "Manual history/debug:",
-            "- /run list",
-            "- /run use <run_id>",
+            "Primary flow:",
+            "- /project list",
+            "- /project use <project_id>",
+            "- /work list",
+            "- /work use <work_unit_id>",
+            "- /inspect",
             "- /show [run_id]",
             "- /selection show [run_id]",
             '- /selection override <proposal_id> --why "<operator rationale>" [run_id]',
+            "History/debug:",
+            "- /run list",
+            "- /run use <run_id>",
+            "- /trace [run_id]",
+            "- /lifecycle [run_id]",
+            "- /scope show",
+            "- /scope clear",
+            "- /mode <compact|debug>",
+            "- /json <on|off>",
+            "Conditional requests:",
+            "- /approve [run_id]",
+            "- /reject [run_id]",
+            "- /retry [run_id]",
+            "- /revalidate [run_id]",
+            "- /recover [run_id]",
             "Research:",
             '- /research docs "<question>" <path1> [<path2> ...] [--handoff-memory]',
             '- /research web "<question>" <query1> [<query2> ...] [--handoff-memory]',
             "Current startup uses explicit in-memory demo state and can load local runtime config for research.",
-            "",
-            "Commands:",
-            "/project list",
-            "/project use <project_id>",
-            "/work list",
-            "/work use <work_unit_id>",
-            "/inspect",
-            "/run list",
-            "/run use <run_id>",
-            "/scope show",
-            "/scope clear",
-            "/show [run_id]",
-            "/selection show [run_id]",
-            '/selection override <proposal_id> --why "<operator rationale>" [run_id]',
-            "/trace [run_id]",
-            "/lifecycle [run_id]",
-            '/research docs "<question>" <path1> [<path2> ...] [--handoff-memory]',
-            '/research web "<question>" <query1> [<query2> ...] [--handoff-memory]',
-            "/mode <compact|debug>",
-            "/json <on|off>",
-            "/approve [run_id]",
-            "/reject [run_id]",
-            "/retry [run_id]",
-            "/revalidate [run_id]",
-            "/recover [run_id]",
-            "/help",
         ]
     )
+
+
+def _compact_text(text: str, *, limit: int = 120) -> str:
+    if len(text) <= limit:
+        return text
+    return f"{text[: limit - 3].rstrip()}..."

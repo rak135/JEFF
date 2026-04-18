@@ -1,0 +1,37 @@
+{
+  "record_class": "canonical_state_snapshot",
+  "recorded_at": "2026-04-18T17:02:23+00:00",
+  "schema_version": "1.0",
+  "state": {
+    "projects": {
+      "project-1": {
+        "name": "Jeff Runtime Project",
+        "project_id": "project-1",
+        "project_lifecycle_state": "active",
+        "work_units": {
+          "wu-1": {
+            "objective": "Inspect the current Jeff v1 backbone through the CLI.",
+            "project_id": "project-1",
+            "runs": {
+              "run-1": {
+                "project_id": "project-1",
+                "run_id": "run-1",
+                "run_lifecycle_state": "created",
+                "work_unit_id": "wu-1"
+              }
+            },
+            "work_unit_id": "wu-1",
+            "work_unit_lifecycle_state": "open"
+          }
+        }
+      }
+    },
+    "state_meta": {
+      "last_transition_id": "transition-run",
+      "state_version": 3
+    },
+    "system": {
+      "system_lifecycle_state": "ready"
+    }
+  }
+}

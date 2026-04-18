@@ -33,7 +33,12 @@ def test_json_on_failure_path_returns_structured_research_error_payload(tmp_path
     payload = json.loads(outputs[-1])
 
     assert payload["view"] == "research_error"
+    assert payload["derived"]["failure_kind"] == "synthesis_runtime_problem"
     assert payload["support"]["error_code"] == "timeout"
+    assert payload["support"]["research_mode"] == "docs"
+    assert payload["support"]["stage"] == "synthesis"
+    assert payload["support"]["question"] == "What does the bounded plan support?"
+    assert payload["support"]["provided_input_count"] == 1
     assert payload["support"]["adapter_id"] == "research-timeout"
     assert payload["support"]["model_name"] == "research-model"
 
@@ -51,6 +56,9 @@ def test_non_json_failure_path_returns_bounded_human_readable_detail(tmp_path: P
     )
 
     assert outputs[-1].startswith("research synthesis failed: malformed_output")
+    assert "mode=docs" in outputs[-1]
+    assert "stage=synthesis" in outputs[-1]
+    assert "provided_inputs=1" in outputs[-1]
     assert "adapter=research-malformed" in outputs[-1]
     assert "model=research-model" in outputs[-1]
 

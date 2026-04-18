@@ -1,7 +1,7 @@
 import pytest
 
 from jeff.cognitive.selection import SelectionResult
-from jeff.cognitive.selection_override import (
+from jeff.cognitive.post_selection.override import (
     OperatorSelectionOverrideRequest,
     OperatorSelectionOverrideValidationError,
     build_operator_selection_override,

@@ -10,39 +10,46 @@ import re
 import shlex
 from typing import Mapping
 
+from jeff.action.execution import ExecutionResult
 from jeff.cognitive import (
     ResearchArtifactRecord,
     ResearchArtifactStore,
+    ResearchOperatorSurfaceError,
     ResearchRequest,
     ResearchSynthesisRuntimeError,
+    ResearchSynthesisValidationError,
     SelectionResult,
     handoff_persisted_research_record_to_memory,
     run_and_persist_document_research,
     run_and_persist_web_research,
 )
-from jeff.cognitive.action_formation import ActionFormationRequest, FormedActionResult, form_action_from_materialized_proposal
-from jeff.cognitive.action_governance_handoff import (
-    ActionGovernanceHandoffRequest,
-    GovernedActionHandoffResult,
-    handoff_action_to_governance,
+from jeff.cognitive.post_selection.action_formation import (
+    ActionFormationRequest,
+    FormedActionResult,
+    form_action_from_materialized_proposal,
 )
-from jeff.cognitive.proposal import ProposalResult
-from jeff.cognitive.research.debug import finding_source_refs_summary, summarize_values
-from jeff.cognitive.selection_action_resolution import (
+from jeff.cognitive.post_selection.action_resolution import (
     ResolvedSelectionActionBasis,
     SelectionActionResolutionRequest,
     resolve_selection_action_basis,
 )
-from jeff.cognitive.selection_effective_proposal import (
+from jeff.cognitive.post_selection.effective_proposal import (
     MaterializedEffectiveProposal,
     SelectionEffectiveProposalRequest,
     materialize_effective_proposal,
 )
-from jeff.cognitive.selection_override import (
+from jeff.cognitive.post_selection.governance_handoff import (
+    ActionGovernanceHandoffRequest,
+    GovernedActionHandoffResult,
+    handoff_action_to_governance,
+)
+from jeff.cognitive.post_selection.override import (
     OperatorSelectionOverride,
     OperatorSelectionOverrideRequest,
     build_operator_selection_override,
 )
+from jeff.cognitive.proposal import ProposalResult
+from jeff.cognitive.research.debug import finding_source_refs_summary, summarize_values
 from jeff.cognitive.types import require_text
 from jeff.core.containers.models import Project, Run, WorkUnit
 from jeff.core.schemas import Scope
@@ -52,6 +59,7 @@ from jeff.governance import Approval, CurrentTruthSnapshot, Policy
 from jeff.infrastructure import InfrastructureServices
 from jeff.memory import InMemoryMemoryStore, MemoryWriteDecision
 from jeff.orchestrator import FlowRunResult
+from jeff.runtime_persistence import PersistedRuntimeStore
 
 from .json_views import (
     lifecycle_json,
@@ -110,6 +118,8 @@ class InterfaceContext:
     research_artifact_store: ResearchArtifactStore | None = None
     memory_store: InMemoryMemoryStore | None = None
     research_memory_handoff_enabled: bool = True
+    runtime_store: PersistedRuntimeStore | None = None
+    startup_summary: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -127,6 +137,115 @@ class CommandResult:
     text: str
     json_payload: dict[str, object] | None = None
     debug_events: tuple[dict[str, object], ...] = ()
+
+
+def _latest_research_checkpoint(debug_events: tuple[dict[str, object], ...]) -> str | None:
+    for event in reversed(debug_events):
+        checkpoint = event.get("checkpoint")
+        if isinstance(checkpoint, str) and checkpoint.strip():
+            return checkpoint
+    return None
+
+
+def _latest_research_count(debug_events: tuple[dict[str, object], ...], *field_names: str) -> int | None:
+    for event in reversed(debug_events):
+        payload = event.get("payload")
+        if not isinstance(payload, dict):
+            continue
+        for field_name in field_names:
+            value = payload.get(field_name)
+            if isinstance(value, bool):
+                continue
+            if isinstance(value, int):
+                return value
+    return None
+
+
+def _annotate_research_runtime_error(
+    error: ResearchSynthesisRuntimeError,
+    *,
+    research_request: ResearchRequest,
+    spec: ResearchCommandSpec,
+    debug_events: tuple[dict[str, object], ...],
+) -> None:
+    setattr(error, "question", research_request.question)
+    setattr(error, "provided_input_count", len(spec.inputs))
+    setattr(error, "stage", "synthesis")
+    checkpoint = _latest_research_checkpoint(debug_events)
+    if checkpoint is not None:
+        setattr(error, "checkpoint", checkpoint)
+    resolved_source_count = _latest_research_count(
+        debug_events,
+        "projected_source_count",
+        "source_item_count",
+        "source_count",
+    )
+    if resolved_source_count is not None:
+        setattr(error, "resolved_source_count", resolved_source_count)
+
+
+def _research_surface_error_from_backend_failure(
+    *,
+    spec: ResearchCommandSpec,
+    research_request: ResearchRequest,
+    exc: Exception,
+    debug_events: tuple[dict[str, object], ...],
+) -> ResearchOperatorSurfaceError:
+    reason = str(exc)
+    failure_kind = "synthesis_problem"
+    error_code = "synthesis_validation_error"
+    stage = "synthesis"
+    missing_inputs = tuple(getattr(exc, "missing_inputs", ()))
+
+    if missing_inputs:
+        failure_kind = "input_problem"
+        error_code = "missing_input_paths"
+        stage = "source_acquisition"
+    elif _looks_like_source_acquisition_failure(reason):
+        failure_kind = "source_acquisition_problem"
+        error_code = "source_acquisition_failed"
+        stage = "source_acquisition"
+    elif isinstance(exc, (ResearchSynthesisValidationError, ValueError)):
+        failure_kind = "synthesis_problem"
+        error_code = "synthesis_validation_error"
+        stage = "synthesis"
+
+    return ResearchOperatorSurfaceError(
+        failure_kind=failure_kind,
+        error_code=error_code,
+        reason=reason,
+        research_mode=spec.mode,
+        project_id=research_request.project_id,
+        work_unit_id=research_request.work_unit_id,
+        run_id=research_request.run_id,
+        question=research_request.question,
+        stage=stage,
+        checkpoint=_latest_research_checkpoint(debug_events),
+        provided_input_count=getattr(exc, "provided_input_count", len(spec.inputs)),
+        resolved_source_count=_latest_research_count(
+            debug_events,
+            "projected_source_count",
+            "source_item_count",
+            "source_count",
+        ),
+        missing_inputs=missing_inputs,
+    )
+
+
+def _looks_like_source_acquisition_failure(reason: str) -> bool:
+    markers = (
+        "explicit document paths were missing",
+        "document source collection requires explicit document_paths",
+        "document discovery requires explicit document_paths",
+        "no supported document sources were collected",
+        "document evidence pack requires at least one document source",
+        "no evidence items were extracted from collected documents",
+        "web source collection requires explicit web_queries",
+        "no supported web sources were collected",
+        "web evidence pack requires at least one web source",
+        "no evidence items were extracted from collected web sources",
+    )
+    return any(marker in reason for marker in markers)
 
 
 GENERAL_RESEARCH_PROJECT_ID = "general_research"
@@ -183,6 +302,26 @@ def execute_command(
                 context=context,
                 live_debug_emitter=live_debug_emitter,
             )
+        except ResearchOperatorSurfaceError as exc:
+            if not (json_output is True or (json_output is None and session.json_output)):
+                raise
+            payload = research_error_json(
+                project_id=exc.project_id,
+                work_unit_id=exc.work_unit_id,
+                run_id=exc.run_id,
+                research_mode=exc.research_mode,
+                error=exc,
+                session=session,
+                debug_events=tuple(getattr(exc, "debug_events", ())),
+            )
+            payload = _with_debug_payload(payload, debug_events=getattr(exc, "debug_events", ()), session=session)
+            return CommandResult(
+                context=context,
+                session=session,
+                text=json.dumps(payload, sort_keys=True),
+                json_payload=payload,
+                debug_events=tuple(getattr(exc, "debug_events", ())),
+            )
         except ResearchSynthesisRuntimeError as exc:
             if not (json_output is True or (json_output is None and session.json_output)):
                 raise
@@ -193,6 +332,7 @@ def execute_command(
                 research_mode=exc.research_mode,
                 error=exc,
                 session=session,
+                debug_events=tuple(getattr(exc, "debug_events", ())),
             )
             payload = _with_debug_payload(payload, debug_events=getattr(exc, "debug_events", ()), session=session)
             return CommandResult(
@@ -327,7 +467,14 @@ def _inspect_command(*, tokens: list[str], session: CliSession, context: Interfa
         work_unit=work_unit,
     )
     flow_run = next_context.flow_runs.get(str(run.run_id))
-    payload = run_show_json(project=project, work_unit=work_unit, run=run, flow_run=flow_run)
+    next_context, selection_review = _ensure_selection_review_for_run(context=next_context, run=run, flow_run=flow_run)
+    payload = run_show_json(
+        project=project,
+        work_unit=work_unit,
+        run=run,
+        flow_run=flow_run,
+        selection_review=selection_review,
+    )
     text = render_run_show(payload)
     if notice is not None:
         text = f"{notice}\n{text}"
@@ -344,11 +491,18 @@ def _show_command(*, tokens: list[str], session: CliSession, context: InterfaceC
     project = _require_project_for_run(context, run.project_id)
     work_unit = project.work_units[run.work_unit_id]
     flow_run = context.flow_runs.get(str(run.run_id))
-    payload = run_show_json(project=project, work_unit=work_unit, run=run, flow_run=flow_run)
+    next_context, selection_review = _ensure_selection_review_for_run(context=context, run=run, flow_run=flow_run)
+    payload = run_show_json(
+        project=project,
+        work_unit=work_unit,
+        run=run,
+        flow_run=flow_run,
+        selection_review=selection_review,
+    )
     text = render_run_show(payload)
     if notice is not None:
         text = f"{notice}\n{text}"
-    return CommandResult(context=context, session=next_session, text=text, json_payload=payload)
+    return CommandResult(context=next_context, session=next_session, text=text, json_payload=payload)
 
 
 def _selection_command(*, tokens: list[str], session: CliSession, context: InterfaceContext) -> CommandResult:
@@ -381,7 +535,7 @@ def _selection_show_command(*, tokens: list[str], session: CliSession, context: 
     project = _require_project_for_run(context, run.project_id)
     work_unit = project.work_units[run.work_unit_id]
     flow_run = context.flow_runs.get(str(run.run_id))
-    selection_review = context.selection_reviews.get(str(run.run_id))
+    next_context, selection_review = _ensure_selection_review_for_run(context=context, run=run, flow_run=flow_run)
     payload = selection_review_json(
         project=project,
         work_unit=work_unit,
@@ -392,7 +546,7 @@ def _selection_show_command(*, tokens: list[str], session: CliSession, context: 
     text = render_selection_review(payload)
     if notice is not None:
         text = f"{notice}\n{text}"
-    return CommandResult(context=context, session=next_session, text=text, json_payload=payload)
+    return CommandResult(context=next_context, session=next_session, text=text, json_payload=payload)
 
 
 def _selection_override_command(*, tokens: list[str], session: CliSession, context: InterfaceContext) -> CommandResult:
@@ -405,11 +559,11 @@ def _selection_override_command(*, tokens: list[str], session: CliSession, conte
         command_name="selection override",
     )
     run_id = str(run.run_id)
-    existing_review = context.selection_reviews.get(run_id)
+    flow_run = context.flow_runs.get(run_id)
+    next_context, existing_review = _ensure_selection_review_for_run(context=context, run=run, flow_run=flow_run)
     if existing_review is None:
         raise ValueError(f"no selection review data is available for run {run_id}")
 
-    flow_run = context.flow_runs.get(run_id)
     selection_result = existing_review.selection_result
     if selection_result is None and flow_run is not None:
         candidate = flow_run.outputs.get("selection")
@@ -431,7 +585,7 @@ def _selection_override_command(*, tokens: list[str], session: CliSession, conte
         selection_result=selection_result,
         operator_override=operator_override,
     )
-    next_context = _replace_selection_review(context=context, run_id=run_id, selection_review=updated_review)
+    next_context = _replace_selection_review(context=next_context, run_id=run_id, selection_review=updated_review)
     payload = selection_override_receipt_json(
         run_id=run_id,
         selection_review=updated_review,
@@ -456,6 +610,156 @@ def _parse_selection_override_tokens(tokens: list[str]) -> tuple[str, str, str |
     operator_rationale = require_text(tokens[4], field_name="operator_rationale")
     run_token = tokens[5] if len(tokens) == 6 else None
     return proposal_id, operator_rationale, run_token
+
+
+def _ensure_selection_review_for_run(
+    *,
+    context: InterfaceContext,
+    run: Run,
+    flow_run: FlowRunResult | None,
+) -> tuple[InterfaceContext, SelectionReviewRecord | None]:
+    run_id = str(run.run_id)
+    existing_review = context.selection_reviews.get(run_id)
+    selection_review = _materialize_selection_review_from_available_data(
+        existing_review=existing_review,
+        flow_run=flow_run,
+    )
+    if selection_review is None:
+        return context, None
+    if existing_review == selection_review:
+        return context, selection_review
+    return _replace_selection_review(context=context, run_id=run_id, selection_review=selection_review), selection_review
+
+
+def _materialize_selection_review_from_available_data(
+    *,
+    existing_review: SelectionReviewRecord | None,
+    flow_run: FlowRunResult | None,
+) -> SelectionReviewRecord | None:
+    selection_result = None if existing_review is None else existing_review.selection_result
+    if selection_result is None and flow_run is not None:
+        candidate = flow_run.outputs.get("selection")
+        if isinstance(candidate, SelectionResult):
+            selection_result = candidate
+
+    proposal_result = None if existing_review is None else existing_review.proposal_result
+    if proposal_result is None and flow_run is not None:
+        candidate = flow_run.outputs.get("proposal")
+        if isinstance(candidate, ProposalResult):
+            proposal_result = candidate
+
+    if existing_review is None and selection_result is None and proposal_result is None:
+        return None
+
+    operator_override = None if existing_review is None else existing_review.operator_override
+    resolved_basis = None if existing_review is None else existing_review.resolved_basis
+    materialized_effective_proposal = None if existing_review is None else existing_review.materialized_effective_proposal
+    formed_action_result = None if existing_review is None else existing_review.formed_action_result
+    governance_handoff_result = None if existing_review is None else existing_review.governance_handoff_result
+
+    governance_policy = None if existing_review is None else existing_review.governance_policy
+    if governance_policy is None and flow_run is not None:
+        candidate = flow_run.outputs.get("governance_policy")
+        if isinstance(candidate, Policy):
+            governance_policy = candidate
+
+    governance_approval = None if existing_review is None else existing_review.governance_approval
+    if governance_approval is None and flow_run is not None:
+        candidate = flow_run.outputs.get("governance_approval")
+        if isinstance(candidate, Approval):
+            governance_approval = candidate
+
+    governance_truth = None if existing_review is None else existing_review.governance_truth
+    if governance_truth is None and flow_run is not None:
+        candidate = flow_run.outputs.get("governance_truth")
+        if isinstance(candidate, CurrentTruthSnapshot):
+            governance_truth = candidate
+
+    action_scope = None if existing_review is None else existing_review.action_scope
+    if action_scope is None and proposal_result is not None:
+        action_scope = proposal_result.scope
+    basis_state_version = None if existing_review is None else existing_review.basis_state_version
+    if governance_truth is not None and basis_state_version is None:
+        basis_state_version = governance_truth.state_version
+
+    execution_result = None
+    if flow_run is not None:
+        candidate = flow_run.outputs.get("execution")
+        if isinstance(candidate, ExecutionResult):
+            execution_result = candidate
+    if execution_result is not None:
+        if action_scope is None:
+            action_scope = execution_result.governed_request.action.scope
+        if basis_state_version is None:
+            basis_state_version = execution_result.governed_request.action.basis_state_version
+
+    if (
+        selection_result is not None
+        and resolved_basis is None
+        and (flow_run is not None or proposal_result is not None or operator_override is not None)
+    ):
+        resolved_basis = resolve_selection_action_basis(
+            SelectionActionResolutionRequest(
+                request_id=f"selection-review-resolution:{selection_result.selection_id}",
+                selection_result=selection_result,
+                operator_override=operator_override,
+            )
+        )
+
+    if proposal_result is not None and resolved_basis is not None and materialized_effective_proposal is None:
+        materialized_effective_proposal = materialize_effective_proposal(
+            SelectionEffectiveProposalRequest(
+                request_id=f"selection-review-materialization:{selection_result.selection_id}",
+                proposal_result=proposal_result,
+                resolved_basis=resolved_basis,
+            )
+        )
+
+    if (
+        materialized_effective_proposal is not None
+        and action_scope is not None
+        and basis_state_version is not None
+        and formed_action_result is None
+    ):
+        formed_action_result = form_action_from_materialized_proposal(
+            ActionFormationRequest(
+                request_id=f"selection-review-action-formation:{materialized_effective_proposal.selection_id}",
+                materialized_effective_proposal=materialized_effective_proposal,
+                scope=action_scope,
+                basis_state_version=basis_state_version,
+            )
+        )
+
+    if (
+        formed_action_result is not None
+        and governance_policy is not None
+        and governance_truth is not None
+        and governance_handoff_result is None
+    ):
+        governance_handoff_result = handoff_action_to_governance(
+            ActionGovernanceHandoffRequest(
+                request_id=f"selection-review-governance-handoff:{formed_action_result.selection_id}",
+                formed_action_result=formed_action_result,
+                policy=governance_policy,
+                approval=governance_approval,
+                truth=governance_truth,
+            )
+        )
+
+    return SelectionReviewRecord(
+        selection_result=selection_result,
+        operator_override=operator_override,
+        resolved_basis=resolved_basis,
+        materialized_effective_proposal=materialized_effective_proposal,
+        formed_action_result=formed_action_result,
+        governance_handoff_result=governance_handoff_result,
+        proposal_result=proposal_result,
+        action_scope=action_scope,
+        basis_state_version=basis_state_version,
+        governance_policy=governance_policy,
+        governance_approval=governance_approval,
+        governance_truth=governance_truth,
+    )
 
 
 def _recompute_selection_review_record(
@@ -546,6 +850,8 @@ def _replace_selection_review(
     run_id: str,
     selection_review: SelectionReviewRecord,
 ) -> InterfaceContext:
+    if context.runtime_store is not None:
+        context.runtime_store.save_selection_review(run_id, selection_review)
     next_reviews = dict(context.selection_reviews)
     next_reviews[run_id] = selection_review
     return InterfaceContext(
@@ -556,6 +862,8 @@ def _replace_selection_review(
         research_artifact_store=context.research_artifact_store,
         memory_store=context.memory_store,
         research_memory_handoff_enabled=context.research_memory_handoff_enabled,
+        runtime_store=context.runtime_store,
+        startup_summary=context.startup_summary,
     )
 
 
@@ -618,12 +926,28 @@ def _research_command(
         live_debug_emitter=live_debug_emitter if next_session.output_mode == "debug" else None,
     )
     try:
-        record = _run_research_backend(
-            spec=spec,
-            research_request=research_request,
-            context=next_context,
-            debug_emitter=debug_collector.emit,
-        )
+        try:
+            record = _run_research_backend(
+                spec=spec,
+                research_request=research_request,
+                context=next_context,
+                debug_emitter=debug_collector.emit,
+            )
+        except ResearchSynthesisRuntimeError as exc:
+            _annotate_research_runtime_error(
+                exc,
+                research_request=research_request,
+                spec=spec,
+                debug_events=tuple(debug_collector.events),
+            )
+            raise
+        except Exception as exc:
+            raise _research_surface_error_from_backend_failure(
+                spec=spec,
+                research_request=research_request,
+                exc=exc,
+                debug_events=tuple(debug_collector.events),
+            ) from exc
         memory_handoff_result = _maybe_handoff_research_record_to_memory(
             context=next_context,
             spec=spec,
@@ -641,6 +965,8 @@ def _research_command(
             }
         )
         try:
+            artifact_store = _require_research_store(next_context)
+            artifact_locator = str(artifact_store.path_for(record.artifact_id).resolve())
             payload = research_result_json(
                 project_id=str(project.project_id),
                 work_unit_id=str(work_unit.work_unit_id),
@@ -650,6 +976,7 @@ def _research_command(
                 record=record,
                 memory_handoff_result=memory_handoff_result,
                 session=next_session,
+                artifact_locator=artifact_locator,
             )
         except Exception as exc:
             debug_collector.emit(
@@ -664,7 +991,20 @@ def _research_command(
                     },
                 }
             )
-            raise
+            raise ResearchOperatorSurfaceError(
+                failure_kind="projection_problem",
+                error_code="projection_failed",
+                reason=str(exc),
+                research_mode=spec.mode,
+                project_id=str(project.project_id),
+                work_unit_id=str(work_unit.work_unit_id),
+                run_id=str(run.run_id),
+                question=research_request.question,
+                stage="projection",
+                checkpoint="projection_failed",
+                provided_input_count=len(spec.inputs),
+                resolved_source_count=len(record.source_items),
+            ) from exc
         debug_collector.emit(
             {
                 "domain": "research",
@@ -698,7 +1038,20 @@ def _research_command(
                     },
                 }
             )
-            raise
+            raise ResearchOperatorSurfaceError(
+                failure_kind="render_problem",
+                error_code="render_failed",
+                reason=str(exc),
+                research_mode=spec.mode,
+                project_id=str(project.project_id),
+                work_unit_id=str(work_unit.work_unit_id),
+                run_id=str(run.run_id),
+                question=research_request.question,
+                stage="render",
+                checkpoint="render_failed",
+                provided_input_count=len(spec.inputs),
+                resolved_source_count=len(payload["support"]["sources"]),
+            ) from exc
         debug_collector.emit(
             {
                 "domain": "research",
@@ -1097,7 +1450,7 @@ def _create_run_for_work_unit(
         scope=Scope(project_id=str(project.project_id), work_unit_id=str(work_unit.work_unit_id)),
         payload={"run_id": next_run_id},
     )
-    result = apply_transition(context.state, request)
+    result = _apply_context_transition(context=context, request=request)
     if result.transition_result != "committed":
         issue = result.validation_errors[0].message if result.validation_errors else "unknown transition failure"
         raise ValueError(f"automatic run creation failed: {issue}")
@@ -1116,9 +1469,9 @@ def _ensure_project_exists(
     if project_id in context.state.projects:
         return context.state.projects[project_id], context, False
 
-    result = apply_transition(
-        context.state,
-        TransitionRequest(
+    result = _apply_context_transition(
+        context=context,
+        request=TransitionRequest(
             transition_id=f"transition-auto-create-project-{project_id}",
             transition_type="create_project",
             basis_state_version=context.state.state_meta.state_version,
@@ -1144,9 +1497,9 @@ def _ensure_work_unit_exists(
     if work_unit_id in project.work_units:
         return project.work_units[work_unit_id], context, False
 
-    result = apply_transition(
-        context.state,
-        TransitionRequest(
+    result = _apply_context_transition(
+        context=context,
+        request=TransitionRequest(
             transition_id=f"transition-auto-create-work-unit-{project.project_id}-{work_unit_id}",
             transition_type="create_work_unit",
             basis_state_version=context.state.state_meta.state_version,
@@ -1239,7 +1592,15 @@ def _replace_context_state(context: InterfaceContext, state: GlobalState) -> Int
         research_artifact_store=context.research_artifact_store,
         memory_store=context.memory_store,
         research_memory_handoff_enabled=context.research_memory_handoff_enabled,
+        runtime_store=context.runtime_store,
+        startup_summary=context.startup_summary,
     )
+
+
+def _apply_context_transition(*, context: InterfaceContext, request: TransitionRequest):
+    if context.runtime_store is not None:
+        return context.runtime_store.apply_transition(context.state, request)
+    return apply_transition(context.state, request)
 
 
 def _with_debug_payload(

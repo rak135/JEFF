@@ -9,9 +9,11 @@ def test_one_shot_help_reaches_cli_surface() -> None:
     assert result.returncode == 0
     assert "Jeff CLI is command-driven." in result.stdout
     assert "/project list" in result.stdout
-    assert "5. /inspect" in result.stdout
+    assert "Primary flow:" in result.stdout
     assert "/run list" in result.stdout
     assert "/show [run_id]" in result.stdout
+    assert "/proposal show" not in result.stdout
+    assert "/evaluation show" not in result.stdout
 
 
 def test_one_shot_project_list_uses_bootstrapped_demo_context() -> None:
@@ -40,3 +42,47 @@ def test_unknown_one_shot_command_fails_clearly() -> None:
     assert result.returncode != 0
     assert "unsupported command" in result.stderr
     assert "use /help" in result.stderr
+
+
+def test_one_shot_scope_flags_support_show_without_persistent_tty() -> None:
+    result = run_jeff("--project", "project-1", "--work", "wu-1", "--command", "/show")
+
+    assert result.returncode == 0
+    assert "auto-selected current run: run-1" in result.stdout
+    assert "RUN run-1" in result.stdout
+    assert "[support][proposal] serious_option_count=2" in result.stdout
+
+
+def test_repeated_one_shot_commands_share_temporary_session_scope() -> None:
+    result = run_jeff(
+        "--project",
+        "project-1",
+        "--work",
+        "wu-1",
+        "--command",
+        "/inspect",
+        "--command",
+        "/selection show",
+    )
+
+    assert result.returncode == 0
+    assert "RUN run-1" in result.stdout
+    assert "SELECTION REVIEW run_id=run-1" in result.stdout
+    assert "[proposal] serious_option_count=2 selected_proposal_id=proposal-1" in result.stdout
+
+
+def test_repeated_one_shot_commands_make_demo_override_usable() -> None:
+    result = run_jeff(
+        "--project",
+        "project-1",
+        "--work",
+        "wu-1",
+        "--command",
+        "/inspect",
+        "--command",
+        '/selection override proposal-2 --why "Operator wants the alternate bounded demo path."',
+    )
+
+    assert result.returncode == 0
+    assert "SELECTION OVERRIDE RECORDED run_id=run-1" in result.stdout
+    assert "chosen_proposal_id=proposal-2" in result.stdout

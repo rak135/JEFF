@@ -107,19 +107,35 @@ def discover_document_sources(
     )
 
     discovered: list[_DiscoveredDocument] = []
+    missing_inputs: list[str] = []
     discovery_rank = 0
 
     for raw_path in document_paths:
+        explicit_path = Path(raw_path).expanduser()
+        if not explicit_path.exists():
+            missing_inputs.append(raw_path)
+            continue
         if len(discovered) >= max_files:
             break
 
-        for candidate in _expand_explicit_path(Path(raw_path)):
+        for candidate in _expand_explicit_path(explicit_path):
             if len(discovered) >= max_files:
                 break
             if candidate.suffix.lower() not in allowed_extensions:
                 continue
             discovered.append(_DiscoveredDocument(path=candidate, discovery_rank=discovery_rank))
             discovery_rank += 1
+
+    if missing_inputs:
+        error = ResearchSynthesisValidationError(
+            _missing_document_inputs_message(
+                document_paths=document_paths,
+                missing_inputs=tuple(missing_inputs),
+            )
+        )
+        setattr(error, "missing_inputs", tuple(missing_inputs))
+        setattr(error, "provided_input_count", len(document_paths))
+        raise error
 
     return tuple(discovered)
 
@@ -331,3 +347,16 @@ def _has_contradiction_marker(segment: str, query_tokens: tuple[str, ...]) -> bo
     if not query_tokens:
         return True
     return any(token in lowered for token in query_tokens)
+
+
+def _missing_document_inputs_message(
+    *,
+    document_paths: tuple[str, ...],
+    missing_inputs: tuple[str, ...],
+) -> str:
+    missing_list = ", ".join(missing_inputs)
+    missing_count = len(missing_inputs)
+    total_count = len(document_paths)
+    if missing_count == total_count:
+        return f"all explicit document paths were missing ({missing_count} of {total_count}): {missing_list}"
+    return f"some explicit document paths were missing ({missing_count} of {total_count}): {missing_list}"
