@@ -1,0 +1,112 @@
+{
+  "artifact_id": "research-16f28c32957ddd1c",
+  "created_at": "2026-04-21T18:44:09.773960+00:00",
+  "evidence_items": [
+    {
+      "source_refs": [
+        "document-a95cd44ea104"
+      ],
+      "text": "- One authority per concern. - No rival truth layers. - No rival mutation primitives. - Truth-first reads before memory or artifacts. - No hidden control flow. - No implicit mutation. - No prompt-only governance. - No interface-owned truth. - No orchestration-owned business logic. - No adapter-owned semantics. - No decorative modularity. - No plan-, workflow-, or selection-implied permission. - Fa"
+    },
+    {
+      "source_refs": [
+        "document-a95cd44ea104"
+      ],
+      "text": "Jeff uses nine top-level layers:"
+    },
+    {
+      "source_refs": [
+        "document-a95cd44ea104"
+      ],
+      "text": "Interpretation rules: - Core, Governance, Cognitive, Action, and Memory are the semantic owner layers. - Orchestration coordinates semantic layers through public contracts. - Interface presents and invokes the system through truthful surfaces. - Infrastructure provides technical support and never defines Jeff semantics. - Assistant is future higher-level interaction behavior above the rest of the"
+    },
+    {
+      "source_refs": [
+        "document-a95cd44ea104"
+      ],
+      "text": "Interaction with neighboring layers: - exposes read-only canonical truth surfaces to Governance, Cognitive, Memory, Orchestration, and approved Interface projections - accepts canonical mutation only through transition logic - consumes no downstream layer as a semantic dependency"
+    },
+    {
+      "source_refs": [
+        "document-a95cd44ea104"
+      ],
+      "text": "Interaction with neighboring layers: - reads current truth from Core - consumes bounded action objects formed from selected or plan-refined intent - passes governed action objects and action-entry decisions to Action through Orchestration and public contracts"
+    },
+    {
+      "source_refs": [
+        "document-a95cd44ea104"
+      ],
+      "text": "Interaction with neighboring layers: - reads truth from Core first - may consume Governance constraints as inputs, but does not own final permission - hands bounded selected or plan-refined operational intent downstream as action - does not let selection or planning imply permission by themselves - consumes outcome from Action for evaluation - may recommend transition-relevant updates, but does no"
+    }
+  ],
+  "findings": [
+    {
+      "source_refs": [
+        "document-a95cd44ea104"
+      ],
+      "text": "Jeff uses nine top-level layers."
+    },
+    {
+      "source_refs": [
+        "document-a95cd44ea104"
+      ],
+      "text": "The semantic owner layers include Core, Governance, Cognitive, Action, and Memory."
+    },
+    {
+      "source_refs": [
+        "document-a95cd44ea104"
+      ],
+      "text": "Orchestration coordinates semantic layers using public contracts."
+    },
+    {
+      "source_refs": [
+        "document-a95cd44ea104"
+      ],
+      "text": "Interface presents and invokes the system via truthful surfaces."
+    },
+    {
+      "source_refs": [
+        "document-a95cd44ea104"
+      ],
+      "text": "Infrastructure provides technical support and does not define Jeff semantics."
+    },
+    {
+      "source_refs": [
+        "document-a95cd44ea104"
+      ],
+      "text": "Assistant is a future higher-level interaction behavior positioned above the other layers."
+    }
+  ],
+  "inferences": [
+    "The architecture is designed to separate semantic ownership from coordination and technical infrastructure."
+  ],
+  "project_id": "general_research",
+  "question": "list the layers",
+  "recommendation": null,
+  "run_id": "run-1",
+  "schema_version": "1.0",
+  "source_ids": [
+    "document-a95cd44ea104"
+  ],
+  "source_items": [
+    {
+      "discovery_rank": 0,
+      "domain": null,
+      "extraction_quality": null,
+      "extractor_used": null,
+      "fetched_at": null,
+      "locator": "C:\\DATA\\PROJECTS\\JEFF\\v1_doc\\ARCHITECTURE.md",
+      "published_at": null,
+      "snippet": "# Purpose of This Document This document defines the canonical structural architecture of Jeff. It owns: - the architectural backbone of Jeff as a whole - layer boundaries - dependency direction - module placement by layer - object-class placement at architecture level - hard bou",
+      "source_id": "document-a95cd44ea104",
+      "source_type": "document",
+      "title": "ARCHITECTURE.md"
+    }
+  ],
+  "source_mode": "local_documents",
+  "summary": "Jeff utilizes a structural architecture consisting of nine top-level layers, which are categorized by their roles as semantic owners, coordinators, presentation surfaces, technical support, or higher-level interaction behavior.",
+  "uncertainties": [
+    "The provided evidence lists eight specific layers (Core, Governance, Cognitive, Action, Memory, Orchestration, Interface, Infrastructure, and Assistant) but does not explicitly name a ninth distinct layer despite stating there are nine top-level layers."
+  ],
+  "work_unit_id": "research-docs-list-the-layers-060b7e5a"
+}

@@ -35,6 +35,7 @@ from jeff.orchestrator.lifecycle import FlowLifecycle
 from jeff.orchestrator.runner import FlowRunResult
 from jeff.orchestrator.trace import OrchestrationEvent
 from jeff.runtime_persistence import PersistedRuntimeStore
+from jeff.runtime_support_identity import scoped_support_key_for_scope
 
 RUNTIME_CONFIG_FILENAME = "jeff.runtime.toml"
 
@@ -52,8 +53,8 @@ def build_demo_interface_context() -> InterfaceContext:
     flow_run = build_demo_flow_run(scope, selection_review=selection_review)
     context = InterfaceContext(
         state=state,
-        flow_runs={str(scope.run_id): flow_run},
-        selection_reviews={str(scope.run_id): selection_review},
+        flow_runs={scoped_support_key_for_scope(scope): flow_run},
+        selection_reviews={scoped_support_key_for_scope(scope): selection_review},
     )
     context, _ = sync_run_truth_from_flow(
         context=context,

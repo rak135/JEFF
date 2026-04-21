@@ -1,0 +1,50 @@
+{
+  "artifact_family": "research_brief",
+  "artifact_id": "artifact-325145285ed8466a",
+  "claim_evidence_links": [],
+  "comparison_criteria": [],
+  "comparison_targets": [],
+  "derived_from_artifact_ids": [
+    "research-16f28c32957ddd1c"
+  ],
+  "effective_date": null,
+  "effective_period": null,
+  "event_date": null,
+  "event_framing": null,
+  "evidence_items": [],
+  "evidence_refs": [],
+  "findings": [
+    "Jeff uses nine top-level layers.",
+    "The semantic owner layers include Core, Governance, Cognitive, Action, and Memory.",
+    "Orchestration coordinates semantic layers using public contracts.",
+    "Interface presents and invokes the system via truthful surfaces.",
+    "Infrastructure provides technical support and does not define Jeff semantics.",
+    "Assistant is a future higher-level interaction behavior positioned above the other layers."
+  ],
+  "freshness_posture": null,
+  "generated_at": "2026-04-21T18:44:09.773960+00:00",
+  "inference": [
+    "The architecture is designed to separate semantic ownership from coordination and technical infrastructure."
+  ],
+  "next_history_record_id": null,
+  "observed_date": null,
+  "previous_history_record_id": null,
+  "project_id": "general_research",
+  "question_or_objective": "list the layers",
+  "run_id": "run-1",
+  "schema_version": "1.0",
+  "source_groupings": [],
+  "source_ordering": [],
+  "source_refs": [
+    "document-a95cd44ea104"
+  ],
+  "source_selection_scope": null,
+  "staleness_sensitivity": "medium",
+  "summary": "Jeff utilizes a structural architecture consisting of nine top-level layers, which are categorized by their roles as semantic owners, coordinators, presentation surfaces, technical support, or higher-level interaction behavior.",
+  "support_only": true,
+  "title": "list the layers",
+  "uncertainty": [
+    "The provided evidence lists eight specific layers (Core, Governance, Cognitive, Action, Memory, Orchestration, Interface, Infrastructure, and Assistant) but does not explicitly name a ninth distinct layer despite stating there are nine top-level layers."
+  ],
+  "work_unit_id": "research-docs-list-the-layers-060b7e5a"
+}

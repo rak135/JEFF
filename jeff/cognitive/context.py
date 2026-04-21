@@ -83,6 +83,7 @@ class ContextPackage:
     support_inputs: tuple[SupportInput, ...] = ()
     governance_truth_records: tuple[TruthRecord, ...] = ()
     memory_support_inputs: tuple[SupportInput, ...] = ()
+    memory_support_empty_reason: str | None = None
     compiled_knowledge_support_inputs: tuple[SupportInput, ...] = ()
     archive_support_inputs: tuple[SupportInput, ...] = ()
 
@@ -138,7 +139,7 @@ def assemble_context_package(
         governance_readiness=governance_readiness,
     )
     truth_anchor = " | ".join(record.summary for record in truth_records + governance_truth_records)
-    memory_support_inputs = _retrieve_memory_support_inputs(
+    memory_support_inputs, memory_support_empty_reason = _retrieve_memory_support_inputs(
         scope=scope,
         purpose=purpose,
         trigger=trigger,
@@ -172,6 +173,7 @@ def assemble_context_package(
         governance_truth_records=governance_truth_records,
         support_inputs=validated_support,
         memory_support_inputs=memory_support_inputs,
+        memory_support_empty_reason=memory_support_empty_reason,
         compiled_knowledge_support_inputs=compiled_knowledge_support_inputs,
         archive_support_inputs=archive_support_inputs,
     )
@@ -377,9 +379,11 @@ def _retrieve_memory_support_inputs(
     budget: int,
     truth_anchor: str,
     support_policy: ContextPurposePolicy,
-) -> tuple[SupportInput, ...]:
-    if store is None or not support_policy.include_memory:
-        return ()
+) -> tuple[tuple[SupportInput, ...], str | None]:
+    if store is None:
+        return (), "no configured memory store is available for this scope"
+    if not support_policy.include_memory:
+        return (), "current context purpose did not request memory retrieval"
 
     retrieval_result = retrieve_memory(
         request=MemoryRetrievalRequest(
@@ -391,7 +395,9 @@ def _retrieve_memory_support_inputs(
         ),
         store=store,
     )
-    return tuple(_memory_record_to_support_input(record) for record in retrieval_result.records)
+    if not retrieval_result.records:
+        return (), "no scope-matched memory records matched the current query"
+    return tuple(_memory_record_to_support_input(record) for record in retrieval_result.records), None
 
 
 def _retrieve_compiled_knowledge_support_inputs(

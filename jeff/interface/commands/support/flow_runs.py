@@ -9,6 +9,7 @@ from jeff.core.schemas import Scope
 from jeff.core.transition import TransitionRequest
 from jeff.memory import handoff_run_summary_to_memory
 from jeff.orchestrator import FlowRunResult
+from jeff.runtime_support_identity import find_support_record, scoped_support_key_for_scope
 
 from ..models import InterfaceContext
 from .scope_resolution import get_project, get_run, get_work_unit
@@ -31,7 +32,7 @@ def replace_flow_run(
     if context.runtime_store is not None:
         context.runtime_store.save_flow_run(run_id, prepared_flow_run)
     next_flow_runs = dict(context.flow_runs)
-    next_flow_runs[run_id] = prepared_flow_run
+    next_flow_runs[scoped_support_key_for_scope(prepared_flow_run.lifecycle.scope)] = prepared_flow_run
     return InterfaceContext(
         state=context.state,
         flow_runs=next_flow_runs,
@@ -54,7 +55,8 @@ def _prepare_flow_run_for_storage(
     flow_run: FlowRunResult,
     objective_summary: str | None,
 ) -> FlowRunResult:
-    prior_flow_run = context.flow_runs.get(run_id)
+    run = _require_context_run(context, flow_run)
+    prior_flow_run = find_support_record(context.flow_runs, run=run)
     resolved_objective = _resolve_flow_objective_summary(
         flow_run=flow_run,
         prior_flow_run=prior_flow_run,
@@ -203,8 +205,40 @@ def _evaluation_verdict_from_flow(flow_run: FlowRunResult) -> str | None:
     return None if evaluation is None else evaluation.evaluation_verdict
 
 
-def require_flow_run(context: InterfaceContext, run_id: str) -> FlowRunResult:
-    try:
-        return context.flow_runs[run_id]
-    except KeyError as exc:
-        raise ValueError(f"no orchestrator flow result is available for run {run_id}") from exc
+def find_flow_run_for_run(context: InterfaceContext, run: Run) -> FlowRunResult | None:
+    run_id = str(run.run_id)
+    flow_run = find_support_record(context.flow_runs, run=run)
+    if flow_run is None:
+        return None
+    if _flow_run_matches_run(flow_run, run):
+        return flow_run
+    flow_scope = flow_run.lifecycle.scope
+    raise ValueError(
+        "persisted orchestrator flow result scope mismatch: "
+        f"requested project_id={run.project_id} work_unit_id={run.work_unit_id} run_id={run_id}, "
+        f"but stored support belongs to project_id={flow_scope.project_id} "
+        f"work_unit_id={flow_scope.work_unit_id} run_id={flow_scope.run_id}."
+    )
+
+
+def require_flow_run(context: InterfaceContext, run: Run) -> FlowRunResult:
+    flow_run = find_flow_run_for_run(context, run)
+    if flow_run is None:
+        raise ValueError(f"no orchestrator flow result is available for run {run.run_id}")
+    return flow_run
+
+
+def _flow_run_matches_run(flow_run: FlowRunResult, run: Run) -> bool:
+    scope = flow_run.lifecycle.scope
+    return (
+        str(scope.project_id) == str(run.project_id)
+        and str(scope.work_unit_id) == str(run.work_unit_id)
+        and str(scope.run_id) == str(run.run_id)
+    )
+
+
+def _require_context_run(context: InterfaceContext, flow_run: FlowRunResult) -> Run:
+    scope = flow_run.lifecycle.scope
+    project = get_project(context, str(scope.project_id))
+    work_unit = get_work_unit(project, str(scope.work_unit_id))
+    return get_run(work_unit, str(scope.run_id))

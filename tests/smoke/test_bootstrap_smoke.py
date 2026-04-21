@@ -1,16 +1,19 @@
 from jeff.bootstrap import build_demo_interface_context, run_startup_preflight
+from jeff.core.schemas import Scope
+from jeff.runtime_support_identity import scoped_support_key_for_scope
 
 from tests.fixtures.entrypoint import run_jeff
 
 
 def test_demo_context_bootstraps_with_project_run_and_flow() -> None:
     context = build_demo_interface_context()
+    run_key = scoped_support_key_for_scope(Scope(project_id="project-1", work_unit_id="wu-1", run_id="run-1"))
 
     assert tuple(context.state.projects.keys()) == ("project-1",)
     assert "wu-1" in context.state.projects["project-1"].work_units
     assert "run-1" in context.state.projects["project-1"].work_units["wu-1"].runs
-    assert "run-1" in context.flow_runs
-    assert "run-1" in context.selection_reviews
+    assert run_key in context.flow_runs
+    assert run_key in context.selection_reviews
 
 
 def test_startup_preflight_reports_operator_entry_ready(tmp_path) -> None:

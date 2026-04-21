@@ -1,5 +1,5 @@
 {
-  "counter": 2,
+  "counter": 3,
   "embeddings": {},
   "links": [
     {
@@ -17,6 +17,14 @@
       "metadata": {},
       "target_family": "evaluation",
       "target_id": "run:run-12:flow:flow:run-12"
+    },
+    {
+      "link_type": "evidence_ref",
+      "memory_id": "memory-3",
+      "memory_link_id": "mlink-1",
+      "metadata": {},
+      "target_family": "evaluation",
+      "target_id": "run:run-15:flow:flow:run-15"
     }
   ],
   "maintenance_jobs": [],
@@ -93,6 +101,43 @@
         }
       ],
       "updated_at": "2026-04-20T19:47:19+00:00",
+      "why_it_matters": "This bounded run completed and may serve as a reusable precedent later."
+    },
+    {
+      "conflict_posture": "none",
+      "created_at": "2026-04-21T18:40:15+00:00",
+      "created_from_run_id": "run-15",
+      "freshness_sensitivity": "low",
+      "memory_id": "memory-3",
+      "memory_type": "episodic",
+      "merged_into_memory_id": null,
+      "record_status": "active",
+      "remembered_points": [
+        "Terminal posture: execution completed",
+        "Execution status: completed exit_code=0",
+        "Execution summary: repo-local validation smoke_quickstart_validation exited with code 0",
+        "Outcome state: complete",
+        "Evaluation verdict: acceptable"
+      ],
+      "schema_version": "1.0",
+      "scope": {
+        "project_id": "project-1",
+        "run_id": "run-15",
+        "work_unit_id": "wu-1"
+      },
+      "stability": "stable",
+      "summary": "Run for 'smoke_validation_for_audit' ended as execution completed.",
+      "superseded_by_memory_id": null,
+      "supersedes_memory_id": null,
+      "support_quality": "strong",
+      "support_refs": [
+        {
+          "ref_id": "run:run-15:flow:flow:run-15",
+          "ref_kind": "evaluation",
+          "summary": "Flow flow:run-15 from conditional_planning_execution ended as execution completed"
+        }
+      ],
+      "updated_at": "2026-04-21T18:40:15+00:00",
       "why_it_matters": "This bounded run completed and may serve as a reusable precedent later."
     }
   ],
@@ -228,6 +273,72 @@
       "retrieval_event_id": "re-b5af53c11850",
       "returned_count": 0,
       "semantic_hit_count": 0
+    },
+    {
+      "contradiction_count": 0,
+      "created_at": "2026-04-20T20:14:17+00:00",
+      "explicit_hit_count": 0,
+      "lexical_hit_count": 0,
+      "project_id": "project-1",
+      "purpose": "proposal support startup summary",
+      "retrieval_event_id": "re-00d49c993ee8",
+      "returned_count": 0,
+      "semantic_hit_count": 0
+    },
+    {
+      "contradiction_count": 0,
+      "created_at": "2026-04-21T05:26:56+00:00",
+      "explicit_hit_count": 0,
+      "lexical_hit_count": 0,
+      "project_id": "project-1",
+      "purpose": "operator explanation proposal support Current bounded Jeff work.",
+      "retrieval_event_id": "re-1c8a8c45dc90",
+      "returned_count": 0,
+      "semantic_hit_count": 0
+    },
+    {
+      "contradiction_count": 0,
+      "created_at": "2026-04-21T18:38:33+00:00",
+      "explicit_hit_count": 0,
+      "lexical_hit_count": 0,
+      "project_id": "project-1",
+      "purpose": "operator explanation proposal support Current bounded Jeff work.",
+      "retrieval_event_id": "re-7c1767fce74f",
+      "returned_count": 0,
+      "semantic_hit_count": 0
+    },
+    {
+      "contradiction_count": 0,
+      "created_at": "2026-04-21T18:38:46+00:00",
+      "explicit_hit_count": 0,
+      "lexical_hit_count": 0,
+      "project_id": "project-1",
+      "purpose": "proposal support action preparation smoke_validation_for_audit",
+      "retrieval_event_id": "re-eee2cccd958c",
+      "returned_count": 0,
+      "semantic_hit_count": 0
+    },
+    {
+      "contradiction_count": 0,
+      "created_at": "2026-04-21T18:41:45+00:00",
+      "explicit_hit_count": 0,
+      "lexical_hit_count": 0,
+      "project_id": "general_research",
+      "purpose": "proposal support what is the goal of JEFF",
+      "retrieval_event_id": "re-d1af26f32823",
+      "returned_count": 0,
+      "semantic_hit_count": 0
+    },
+    {
+      "contradiction_count": 0,
+      "created_at": "2026-04-21T18:44:09+00:00",
+      "explicit_hit_count": 0,
+      "lexical_hit_count": 0,
+      "project_id": "general_research",
+      "purpose": "proposal support list the layers",
+      "retrieval_event_id": "re-4b982c9a8f37",
+      "returned_count": 0,
+      "semantic_hit_count": 0
     }
   ],
   "schema_version": "1.0",
@@ -250,6 +361,16 @@
       "project_id": "project-1",
       "related_memory_id": "memory-2",
       "write_event_id": "we-ac6890e43af4",
+      "write_outcome": "write"
+    },
+    {
+      "candidate_id": "run-memory-d729b6d1e060",
+      "created_at": "2026-04-21T18:40:15+00:00",
+      "decision_summary": "write for candidate run-memory-d729b6d1e060",
+      "defer_reason_code": null,
+      "project_id": "project-1",
+      "related_memory_id": "memory-3",
+      "write_event_id": "we-0ce95e4dcf87",
       "write_outcome": "write"
     }
   ]

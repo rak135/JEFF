@@ -16,6 +16,9 @@ from jeff.cognitive import (
     SourceItem,
     build_research_artifact_record,
 )
+from jeff.cognitive.post_selection.selection_review_record import SelectionReviewRecord
+from jeff.cognitive.proposal import ProposalResult, ProposalResultOption
+from jeff.cognitive.selection import SelectionResult
 from jeff.core.schemas import Scope
 from jeff.core.transition import TransitionRequest
 from jeff.governance import Approval, CurrentTruthSnapshot, Policy
@@ -28,9 +31,24 @@ from jeff.infrastructure import (
 )
 from jeff.interface import InterfaceContext
 from jeff.interface import JeffCLI
+from jeff.interface.commands.support.flow_runs import find_flow_run_for_run
+from jeff.interface.commands.support.selection_review_runtime import find_selection_review_for_run
+from jeff.runtime_support_identity import scoped_support_key_for_scope
 from jeff.runtime_persistence import PersistedRuntimeStore, RuntimeMutationLockError
 from tests.fixtures.cli import build_flow_run
 from tests.fixtures.entrypoint import run_jeff
+
+
+def _run_scope(*, project_id: str = "project-1", work_unit_id: str = "wu-1", run_id: str = "run-1") -> Scope:
+    return Scope(project_id=project_id, work_unit_id=work_unit_id, run_id=run_id)
+
+
+def _run_key(*, project_id: str = "project-1", work_unit_id: str = "wu-1", run_id: str = "run-1") -> str:
+    return scoped_support_key_for_scope(_run_scope(project_id=project_id, work_unit_id=work_unit_id, run_id=run_id))
+
+
+def _scoped_review_path(runtime_store: PersistedRuntimeStore, *, scope: Scope) -> Path:
+    return runtime_store.home.selection_reviews_dir / str(scope.project_id) / str(scope.work_unit_id) / f"{scope.run_id}.json"
 
 
 def test_startup_initializes_persisted_runtime_home_when_missing(tmp_path: Path) -> None:
@@ -138,8 +156,8 @@ def test_flow_run_support_records_persist_and_reload_without_becoming_canonical_
     reloaded = build_startup_interface_context(base_dir=tmp_path)
     canonical_payload = json.loads((tmp_path / ".jeff_runtime" / "state" / "canonical_state.json").read_text(encoding="utf-8"))
 
-    assert "run-1" in reloaded.flow_runs
-    assert reloaded.flow_runs["run-1"].lifecycle.flow_id == "flow-1"
+    assert _run_key() in reloaded.flow_runs
+    assert reloaded.flow_runs[_run_key()].lifecycle.flow_id == "flow-1"
     assert "flow_runs" not in canonical_payload
     assert "flows" not in canonical_payload["state"]
 
@@ -160,7 +178,7 @@ def test_selection_review_support_records_persist_and_reload_without_becoming_ca
         )
     )
 
-    assert "run-1" in context.flow_runs
+    assert _run_key() in context.flow_runs
     assert payload["override"]["chosen_proposal_id"] == "proposal-2"
     assert "selection_reviews" not in canonical_payload
     assert "reviews" not in canonical_payload["state"]
@@ -343,7 +361,7 @@ model_name = "fake-model"
     assert created_payload["support"]["execution_summary"]["execution_command_id"] == "reload_validation_probe"
 
     reloaded = build_startup_interface_context(base_dir=tmp_path)
-    flow_run = reloaded.flow_runs["run-1"]
+    flow_run = reloaded.flow_runs[_run_key()]
     execution = flow_run.outputs["execution"]
 
     assert execution.execution_command_id == "reload_validation_probe"
@@ -403,10 +421,10 @@ def test_bound_approval_record_and_revalidate_route_persist_and_reload(tmp_path:
 
     reloaded = build_startup_interface_context(base_dir=tmp_path)
 
-    assert reloaded.selection_reviews["run-1"].governance_approval is not None
-    assert reloaded.selection_reviews["run-1"].governance_approval.approval_verdict == "granted"
-    assert reloaded.flow_runs["run-1"].routing_decision is not None
-    assert reloaded.flow_runs["run-1"].routing_decision.routed_outcome == "revalidate"
+    assert reloaded.selection_reviews[_run_key()].governance_approval is not None
+    assert reloaded.selection_reviews[_run_key()].governance_approval.approval_verdict == "granted"
+    assert reloaded.flow_runs[_run_key()].routing_decision is not None
+    assert reloaded.flow_runs[_run_key()].routing_decision.routed_outcome == "revalidate"
 
 
 def test_show_read_path_materializes_support_without_persisting_selection_review(tmp_path: Path) -> None:
@@ -500,8 +518,108 @@ def test_approve_persists_derived_selection_review_on_lawful_mutating_path(tmp_p
 
     assert payload["derived"]["effect_state"] == "approval_recorded"
     assert selection_review_path.exists()
-    assert reloaded.selection_reviews["run-1"].governance_approval is not None
-    assert reloaded.selection_reviews["run-1"].governance_approval.approval_verdict == "granted"
+    assert reloaded.selection_reviews[_run_key()].governance_approval is not None
+    assert reloaded.selection_reviews[_run_key()].governance_approval.approval_verdict == "granted"
+
+
+def test_scoped_support_records_with_duplicate_run_ids_persist_reload_and_resolve_without_collision(tmp_path: Path) -> None:
+    startup = build_startup_interface_context(base_dir=tmp_path)
+    assert startup.runtime_store is not None
+
+    state = _create_runtime_run(startup.runtime_store, startup.state, scope=_run_scope())
+    second_scope = _run_scope(project_id="project-2", work_unit_id="wu-2", run_id="run-1")
+    state = _create_runtime_project_and_run(
+        startup.runtime_store,
+        state,
+        project_id="project-2",
+        project_name="Project Two",
+        work_unit_id="wu-2",
+        objective="Second persisted scope",
+        run_id="run-1",
+    )
+
+    first_flow = build_flow_run(_run_scope(), flow_family="flow-family-one", selected_proposal_id="proposal-1")
+    second_flow = build_flow_run(second_scope, flow_family="flow-family-two", selected_proposal_id="proposal-2")
+    first_review = _selection_review_for_scope(
+        scope=_run_scope(),
+        selected_proposal_id="proposal-1",
+        state_version=state.state_meta.state_version,
+    )
+    second_review = _selection_review_for_scope(
+        scope=second_scope,
+        selected_proposal_id="proposal-2",
+        state_version=state.state_meta.state_version,
+    )
+
+    first_flow_path = startup.runtime_store.save_flow_run("run-1", first_flow)
+    second_flow_path = startup.runtime_store.save_flow_run("run-1", second_flow)
+    first_review_path = startup.runtime_store.save_selection_review("run-1", first_review)
+    second_review_path = startup.runtime_store.save_selection_review("run-1", second_review)
+
+    assert first_flow_path != second_flow_path
+    assert first_review_path != second_review_path
+    assert first_flow_path == startup.runtime_store.home.flow_runs_dir / "project-1" / "wu-1" / "run-1.json"
+    assert second_flow_path == startup.runtime_store.home.flow_runs_dir / "project-2" / "wu-2" / "run-1.json"
+    assert first_review_path == startup.runtime_store.home.selection_reviews_dir / "project-1" / "wu-1" / "run-1.json"
+    assert second_review_path == startup.runtime_store.home.selection_reviews_dir / "project-2" / "wu-2" / "run-1.json"
+
+    reloaded = build_startup_interface_context(base_dir=tmp_path)
+    first_run = reloaded.state.projects["project-1"].work_units["wu-1"].runs["run-1"]
+    second_run = reloaded.state.projects["project-2"].work_units["wu-2"].runs["run-1"]
+
+    assert _run_key() in reloaded.flow_runs
+    assert _run_key(project_id="project-2", work_unit_id="wu-2", run_id="run-1") in reloaded.flow_runs
+    assert _run_key() in reloaded.selection_reviews
+    assert _run_key(project_id="project-2", work_unit_id="wu-2", run_id="run-1") in reloaded.selection_reviews
+    assert find_flow_run_for_run(reloaded, first_run).lifecycle.flow_family == "flow-family-one"
+    assert find_flow_run_for_run(reloaded, second_run).lifecycle.flow_family == "flow-family-two"
+    assert find_selection_review_for_run(reloaded, first_run).selection_result.selected_proposal_id == "proposal-1"
+    assert find_selection_review_for_run(reloaded, second_run).selection_result.selected_proposal_id == "proposal-2"
+
+
+def test_legacy_flat_support_files_still_load_and_scoped_records_take_precedence(tmp_path: Path) -> None:
+    startup = build_startup_interface_context(base_dir=tmp_path)
+    assert startup.runtime_store is not None
+
+    state = _create_runtime_run(startup.runtime_store, startup.state, scope=_run_scope())
+    scoped_flow = build_flow_run(_run_scope(), flow_family="flow-family-scoped", selected_proposal_id="proposal-2")
+    scoped_review = _selection_review_for_scope(
+        scope=_run_scope(),
+        selected_proposal_id="proposal-2",
+        state_version=state.state_meta.state_version,
+    )
+    scoped_flow_path = startup.runtime_store.save_flow_run("run-1", scoped_flow)
+    scoped_review_path = startup.runtime_store.save_selection_review("run-1", scoped_review)
+
+    legacy_flow_payload = json.loads(scoped_flow_path.read_text(encoding="utf-8"))
+    legacy_flow_payload["lifecycle"]["flow_family"] = "flow-family-legacy"
+    legacy_flow_path = startup.runtime_store.home.flow_runs_dir / "run-1.json"
+    _write_test_json(legacy_flow_path, legacy_flow_payload)
+
+    legacy_review_payload = json.loads(scoped_review_path.read_text(encoding="utf-8"))
+    legacy_review_payload["selection_result"]["selected_proposal_id"] = "proposal-legacy"
+    legacy_review_payload["selection_result"]["considered_proposal_ids"] = ["proposal-legacy", "proposal-2"]
+    legacy_review_payload["proposal_result"]["options"][0]["proposal_id"] = "proposal-legacy"
+    legacy_review_payload["proposal_result"]["options"][0]["title"] = "Legacy selection review option"
+    legacy_review_payload["proposal_result"]["options"][0]["summary"] = "Legacy selection review option"
+    legacy_review_path = startup.runtime_store.home.selection_reviews_dir / "run-1.json"
+    _write_test_json(legacy_review_path, legacy_review_payload)
+
+    scoped_flow_path.unlink()
+    scoped_review_path.unlink()
+
+    legacy_only = build_startup_interface_context(base_dir=tmp_path)
+
+    assert legacy_only.flow_runs[_run_key()].lifecycle.flow_family == "flow-family-legacy"
+    assert legacy_only.selection_reviews[_run_key()].selection_result.selected_proposal_id == "proposal-legacy"
+
+    startup.runtime_store.save_flow_run("run-1", scoped_flow)
+    startup.runtime_store.save_selection_review("run-1", scoped_review)
+
+    preferred = build_startup_interface_context(base_dir=tmp_path)
+
+    assert preferred.flow_runs[_run_key()].lifecycle.flow_family == "flow-family-scoped"
+    assert preferred.selection_reviews[_run_key()].selection_result.selected_proposal_id == "proposal-2"
 
 
 def _write_runtime_config(tmp_path: Path, *, artifact_store_root: str) -> Path:
@@ -546,15 +664,16 @@ def _runtime_context_without_selection_review(tmp_path: Path) -> tuple[Interface
         ),
     )
     reloaded = build_startup_interface_context(base_dir=tmp_path)
-    flow_run = build_flow_run(Scope(project_id="project-1", work_unit_id="wu-1", run_id="run-1"))
+    run_scope = _run_scope()
+    flow_run = build_flow_run(run_scope)
     reloaded.runtime_store.save_flow_run("run-1", flow_run)
-    selection_review_path = startup.runtime_store.home.selection_reviews_dir / "run-1.json"
+    selection_review_path = _scoped_review_path(startup.runtime_store, scope=run_scope)
     if selection_review_path.exists():
         selection_review_path.unlink()
     return (
         InterfaceContext(
             state=reloaded.state,
-            flow_runs={"run-1": flow_run},
+            flow_runs={_run_key(): flow_run},
             selection_reviews={},
             infrastructure_services=reloaded.infrastructure_services,
             research_artifact_store=reloaded.research_artifact_store,
@@ -583,7 +702,7 @@ def _approval_required_runtime_context_without_selection_review(tmp_path: Path) 
         ),
     )
     reloaded = build_startup_interface_context(base_dir=tmp_path)
-    run_scope = Scope(project_id="project-1", work_unit_id="wu-1", run_id="run-1")
+    run_scope = _run_scope()
     approval_flow_run = build_flow_run(
         run_scope,
         lifecycle_state="waiting",
@@ -594,13 +713,13 @@ def _approval_required_runtime_context_without_selection_review(tmp_path: Path) 
         route_reason="required approval is absent",
     )
     reloaded.runtime_store.save_flow_run("run-1", approval_flow_run)
-    selection_review_path = reloaded.runtime_store.home.selection_reviews_dir / "run-1.json"
+    selection_review_path = _scoped_review_path(reloaded.runtime_store, scope=run_scope)
     if selection_review_path.exists():
         selection_review_path.unlink()
     return (
         InterfaceContext(
             state=reloaded.state,
-            flow_runs={"run-1": approval_flow_run},
+            flow_runs={_run_key(): approval_flow_run},
             selection_reviews={},
             infrastructure_services=reloaded.infrastructure_services,
             research_artifact_store=reloaded.research_artifact_store,
@@ -614,6 +733,101 @@ def _approval_required_runtime_context_without_selection_review(tmp_path: Path) 
         selection_review_path,
     )
     return config_path
+
+
+def _write_test_json(path: Path, payload: dict[str, object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+
+
+def _create_runtime_run(runtime_store: PersistedRuntimeStore, state: object, *, scope: Scope):
+    return runtime_store.apply_transition(
+        state,
+        TransitionRequest(
+            transition_id=f"transition-create-run-{scope.project_id}-{scope.work_unit_id}-{scope.run_id}",
+            transition_type="create_run",
+            basis_state_version=state.state_meta.state_version,
+            scope=Scope(project_id=str(scope.project_id), work_unit_id=str(scope.work_unit_id)),
+            payload={"run_id": str(scope.run_id)},
+        ),
+    ).state
+
+
+def _create_runtime_project_and_run(
+    runtime_store: PersistedRuntimeStore,
+    state: object,
+    *,
+    project_id: str,
+    project_name: str,
+    work_unit_id: str,
+    objective: str,
+    run_id: str,
+):
+    state = runtime_store.apply_transition(
+        state,
+        TransitionRequest(
+            transition_id=f"transition-project-{project_id}",
+            transition_type="create_project",
+            basis_state_version=state.state_meta.state_version,
+            scope=Scope(project_id=project_id),
+            payload={"name": project_name},
+        ),
+    ).state
+    state = runtime_store.apply_transition(
+        state,
+        TransitionRequest(
+            transition_id=f"transition-work-unit-{project_id}-{work_unit_id}",
+            transition_type="create_work_unit",
+            basis_state_version=state.state_meta.state_version,
+            scope=Scope(project_id=project_id),
+            payload={"work_unit_id": work_unit_id, "objective": objective},
+        ),
+    ).state
+    return _create_runtime_run(
+        runtime_store,
+        state,
+        scope=Scope(project_id=project_id, work_unit_id=work_unit_id, run_id=run_id),
+    )
+
+
+def _selection_review_for_scope(*, scope: Scope, selected_proposal_id: str, state_version: int) -> SelectionReviewRecord:
+    proposal_result = ProposalResult(
+        request_id=f"proposal-request-{scope.project_id}-{scope.work_unit_id}-{scope.run_id}",
+        scope=scope,
+        options=(
+            ProposalResultOption(
+                option_index=1,
+                proposal_id=selected_proposal_id,
+                proposal_type="direct_action",
+                title=f"Selected option for {scope.project_id}",
+                why_now="This scoped option must remain isolated.",
+                summary=f"Selected option for {scope.project_id}",
+            ),
+            ProposalResultOption(
+                option_index=2,
+                proposal_id=f"fallback-{scope.project_id}",
+                proposal_type="clarify",
+                title=f"Fallback option for {scope.project_id}",
+                why_now="Fallback remains available.",
+                summary=f"Fallback option for {scope.project_id}",
+            ),
+        ),
+    )
+    selection_result = SelectionResult(
+        selection_id=f"selection-{scope.project_id}-{scope.work_unit_id}-{scope.run_id}",
+        considered_proposal_ids=tuple(option.proposal_id for option in proposal_result.options),
+        selected_proposal_id=selected_proposal_id,
+        rationale="The scoped selection result must remain bound to its own run.",
+    )
+    return SelectionReviewRecord(
+        selection_result=selection_result,
+        proposal_result=proposal_result,
+        action_scope=scope,
+        basis_state_version=state_version,
+        governance_policy=Policy(),
+        governance_approval=Approval.not_required(),
+        governance_truth=CurrentTruthSnapshot(scope=scope, state_version=state_version),
+    )
 
 
 def _run_infrastructure_services():

@@ -68,6 +68,29 @@ def test_proposal_input_bundle_keeps_memory_support_out_of_truth_snapshot() -> N
     assert all(item.source_family != "memory" for item in bundle.governance_relevant_support.items)
     assert bundle.memory_support.memory_ids == ("memory-1",)
     assert bundle.memory_support.memory_summaries[0].source_family == "memory"
+    assert bundle.memory_support.empty_reason is None
+
+
+def test_build_proposal_input_bundle_preserves_truthful_empty_memory_reason() -> None:
+    request = _generation_request(include_memory_support=False)
+    bundle = build_proposal_input_bundle(
+        objective=request.objective,
+        scope=request.scope,
+        context_package=ContextPackage(
+            purpose=request.context_package.purpose,
+            trigger=request.context_package.trigger,
+            scope=request.context_package.scope,
+            truth_records=request.context_package.truth_records,
+            support_inputs=request.context_package.support_inputs,
+            memory_support_empty_reason="no scope-matched memory records matched the current query",
+        ),
+        visible_constraints=request.visible_constraints,
+        research_artifacts=request.research_artifacts,
+        committed_memory_records=(),
+    )
+
+    assert bundle.memory_support.memory_summaries == ()
+    assert bundle.memory_support.empty_reason == "no scope-matched memory records matched the current query"
 
 
 def test_optional_research_support_is_rendered_as_support_only_not_authority() -> None:

@@ -1,0 +1,82 @@
+{
+  "artifact_id": "research-41f3a31e4e58042b",
+  "created_at": "2026-04-20T20:14:17.685713+00:00",
+  "evidence_items": [
+    {
+      "source_refs": [
+        "document-81eea87a35d7"
+      ],
+      "text": "Startup loads or initializes a persisted local runtime workspace under `.jeff_runtime`. On a fresh or reset runtime, Jeff initializes `project-1` / `wu-1` with no seeded run history; later startups reload the persisted canonical state and support records already present in that workspace. No daemon, GUI, or background continuation is started."
+    },
+    {
+      "source_refs": [
+        "document-81eea87a35d7"
+      ],
+      "text": "Core startup checks:"
+    },
+    {
+      "source_refs": [
+        "document-81eea87a35d7"
+      ],
+      "text": "```powershell python -m jeff --command \"/research docs `\"`\"summary`\"`\" README.md\" ```"
+    }
+  ],
+  "findings": [
+    {
+      "source_refs": [
+        "document-81eea87a35d7"
+      ],
+      "text": "Jeff initializes a local runtime workspace under .jeff_runtime, creating project-1 / wu-1 without seeded run history on fresh or reset runtimes, and reloading persisted state and records on subsequent startups."
+    },
+    {
+      "source_refs": [
+        "document-81eea87a35d7"
+      ],
+      "text": "The system does not start a GUI, daemon, or background continuation."
+    },
+    {
+      "source_refs": [
+        "document-81eea87a35d7"
+      ],
+      "text": "Jeff's primary strengths include truthful inspection, bounded /run, approval-gated continuation, research support, and anti-drift coverage."
+    },
+    {
+      "source_refs": [
+        "document-81eea87a35d7"
+      ],
+      "text": "Jeff is not designed as a broad API surface, a broad memo, an autonomous continuation system, or a GUI."
+    }
+  ],
+  "inferences": [
+    "Jeff relies on local file system persistence to maintain state between sessions."
+  ],
+  "project_id": "project-1",
+  "question": "startup summary",
+  "recommendation": null,
+  "run_id": "run-10",
+  "schema_version": "1.0",
+  "source_ids": [
+    "document-81eea87a35d7"
+  ],
+  "source_items": [
+    {
+      "discovery_rank": 0,
+      "domain": null,
+      "extraction_quality": null,
+      "extractor_used": null,
+      "fetched_at": null,
+      "locator": "C:\\DATA\\PROJECTS\\JEFF\\README.md",
+      "published_at": null,
+      "snippet": "# Jeff Jeff is a CLI-first persisted-runtime v1 backbone. It is strongest today at truthful inspection, bounded `/run`, approval-gated continuation, research support, and anti-drift coverage. It is not a GUI, a broad API surface, an autonomous continuation system, or a broad memo",
+      "source_id": "document-81eea87a35d7",
+      "source_type": "document",
+      "title": "README.md"
+    }
+  ],
+  "source_mode": "local_documents",
+  "summary": "Jeff is a CLI-first persisted-runtime v1 backbone that initializes or loads a local runtime workspace located under .jeff_runtime. It focuses on truthful inspection, research support, and anti-drift coverage, rather than serving as a GUI or autonomous system.",
+  "uncertainties": [
+    "No explicit uncertainties identified from the provided evidence."
+  ],
+  "work_unit_id": "wu-1"
+}

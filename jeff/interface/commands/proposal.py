@@ -264,7 +264,7 @@ def _resolve_proposal_record(
             context=context,
             command_name=command_name,
         )
-        return _latest_record_for_run(records, str(run.run_id)), next_session, notice
+        return _latest_record_for_scope(records, _scope_for_run(run)), next_session, notice
     if identifier in records:
         return records[identifier], session, None
     run = resolve_run_from_tokens(
@@ -274,15 +274,34 @@ def _resolve_proposal_record(
         command_name=command_name,
     )
     require_project_for_run(context, run.project_id)
-    return _latest_record_for_run(records, str(run.run_id)), session, None
+    return _latest_record_for_scope(records, _scope_for_run(run)), session, None
 
 
-def _latest_record_for_run(records: dict[str, ProposalOperatorRecord], run_id: str) -> ProposalOperatorRecord:
-    matches = [record for record in records.values() if str(record.scope.run_id) == run_id]
+def _latest_record_for_scope(records: dict[str, ProposalOperatorRecord], scope: Scope) -> ProposalOperatorRecord:
+    matches = [record for record in records.values() if _proposal_record_matches_scope(record, scope)]
     if not matches:
-        raise ValueError(f"no persisted proposal records are available for run {run_id}")
+        raise ValueError(
+            "no persisted proposal records are available for "
+            f"project_id={scope.project_id} work_unit_id={scope.work_unit_id} run_id={scope.run_id}"
+        )
     matches.sort(key=lambda record: (record.created_at, record.proposal_id))
     return matches[-1]
+
+
+def _proposal_record_matches_scope(record: ProposalOperatorRecord, scope: Scope) -> bool:
+    return (
+        str(record.scope.project_id) == str(scope.project_id)
+        and str(record.scope.work_unit_id) == str(scope.work_unit_id)
+        and str(record.scope.run_id) == str(scope.run_id)
+    )
+
+
+def _scope_for_run(run) -> Scope:
+    return Scope(
+        project_id=str(run.project_id),
+        work_unit_id=str(run.work_unit_id),
+        run_id=str(run.run_id),
+    )
 
 
 def _require_runtime_store(context: InterfaceContext):

@@ -230,6 +230,17 @@ def research_command(
                 },
             }
         )
+        if not text.strip():
+            debug_collector.emit(
+                {
+                    "domain": "research",
+                    "checkpoint": "render_empty_receipt_fallback",
+                    "payload": {
+                        "projected_source_count": len(payload["support"]["sources"]),
+                    },
+                }
+            )
+            text = _minimal_research_receipt_text(payload)
         if scope_notice is not None:
             text = f"{scope_notice}\n{text}"
         return CommandResult(
@@ -297,6 +308,24 @@ def parse_research_command(*, command_line: str, tokens: list[str]) -> ResearchC
         question=question,
         inputs=tuple(inputs),
         handoff_memory=handoff_memory,
+    )
+
+
+def _minimal_research_receipt_text(payload: dict[str, object]) -> str:
+    truth = payload["truth"]
+    derived = payload["derived"]
+    support = payload["support"]
+    return "\n".join(
+        [
+            (
+                f"RESEARCH {derived['research_mode']} "
+                f"project_id={truth['project_id']} work_unit_id={truth['work_unit_id']} run_id={truth['run_id']}"
+            ),
+            f"artifact_id={support['artifact_id']}",
+            f"source_count={support['source_count']}",
+            f"question={support['question']}",
+            "receipt=research completed; detailed render was empty so a minimal receipt is shown",
+        ]
     )
 
 

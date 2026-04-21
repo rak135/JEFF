@@ -57,6 +57,10 @@ from jeff.orchestrator.lifecycle import FlowLifecycle
 from jeff.orchestrator.routing import RoutingDecision
 from jeff.orchestrator.runner import FlowRunResult
 from jeff.orchestrator.trace import OrchestrationEvent
+from jeff.runtime_support_identity import (
+    scoped_support_key_for_scope,
+    selection_review_scope,
+)
 
 _SCHEMA_VERSION = "1.0"
 _LAYOUT_VERSION = "runtime-home-v1"
@@ -1314,6 +1318,7 @@ def _flow_run_to_payload(run_id: str, flow_run: FlowRunResult) -> dict[str, Any]
         "record_class": "flow_run_support",
         "recorded_at": _utc_timestamp(),
         "run_id": run_id,
+        "scope": _scope_to_payload(flow_run.lifecycle.scope),
         "lifecycle": _flow_lifecycle_to_payload(flow_run.lifecycle),
         "outputs": outputs,
         "events": [_event_to_payload(event) for event in flow_run.events],
@@ -1348,7 +1353,7 @@ def _flow_run_from_payload(payload: dict[str, Any], *, state: GlobalState) -> tu
         memory_handoff_result=_memory_write_decision_from_payload(payload.get("memory_handoff_result")),
         memory_handoff_note=payload.get("memory_handoff_note"),
     )
-    return payload["run_id"], flow_run
+    return scoped_support_key_for_scope(flow_run.lifecycle.scope), flow_run
 
 
 def _memory_write_decision_to_payload(memory_write: RunMemoryHandoffResultSummary | None) -> dict[str, Any] | None:
@@ -1373,12 +1378,13 @@ def _memory_write_decision_from_payload(payload: dict[str, Any] | None) -> RunMe
     )
 
 
-def _selection_review_to_payload(run_id: str, selection_review: SelectionReviewRecord) -> dict[str, Any]:
+def _selection_review_to_payload(run_id: str, selection_review: SelectionReviewRecord, *, scope: Scope) -> dict[str, Any]:
     return {
         "schema_version": _SCHEMA_VERSION,
         "record_class": "selection_review_support",
         "recorded_at": _utc_timestamp(),
         "run_id": run_id,
+        "scope": _scope_to_payload(scope),
         "selection_result": (
             None
             if selection_review.selection_result is None
@@ -1453,7 +1459,20 @@ def _selection_review_from_payload(payload: dict[str, Any]) -> tuple[str, Select
             else _truth_snapshot_from_payload(payload["governance_truth"])
         ),
     )
-    return payload["run_id"], selection_review
+    persisted_scope = None if payload.get("scope") is None else _scope_from_payload(payload["scope"])
+    resolved_scope = persisted_scope or selection_review_scope(selection_review)
+    record_key = payload["run_id"] if resolved_scope is None else scoped_support_key_for_scope(resolved_scope)
+    return record_key, selection_review
+
+
+def _scoped_run_record_path(root_dir: Path, *, scope: Scope) -> Path:
+    if scope.work_unit_id is None or scope.run_id is None:
+        raise ValueError("persisted support record path requires project_id, work_unit_id, and run_id")
+    return root_dir / str(scope.project_id) / str(scope.work_unit_id) / f"{scope.run_id}.json"
+
+
+def _iter_scoped_record_paths(root_dir: Path) -> tuple[Path, ...]:
+    return tuple(sorted(root_dir.glob("*/*/*.json")))
 
 
 @dataclass(frozen=True, slots=True)
@@ -1714,7 +1733,10 @@ class PersistedRuntimeStore:
         return path
 
     def save_flow_run(self, run_id: str, flow_run: FlowRunResult) -> Path:
-        path = self.home.flow_runs_dir / f"{run_id}.json"
+        flow_scope = flow_run.lifecycle.scope
+        if str(flow_scope.run_id) != str(run_id):
+            raise ValueError("persisted flow run support requires run_id to match the flow lifecycle scope")
+        path = _scoped_run_record_path(self.home.flow_runs_dir, scope=flow_scope)
         with self.mutation_guard():
             _write_json(path, _flow_run_to_payload(run_id, flow_run))
         return path
@@ -1722,15 +1744,23 @@ class PersistedRuntimeStore:
     def load_flow_runs(self, *, state: GlobalState | None = None) -> dict[str, FlowRunResult]:
         resolved_state = self.load_canonical_state() if state is None else state
         records: dict[str, FlowRunResult] = {}
+        for path in _iter_scoped_record_paths(self.home.flow_runs_dir):
+            record_key, flow_run = _flow_run_from_payload(_read_json(path), state=resolved_state)
+            records[record_key] = flow_run
         for path in sorted(self.home.flow_runs_dir.glob("*.json")):
-            run_id, flow_run = _flow_run_from_payload(_read_json(path), state=resolved_state)
-            records[run_id] = flow_run
+            record_key, flow_run = _flow_run_from_payload(_read_json(path), state=resolved_state)
+            records.setdefault(record_key, flow_run)
         return records
 
     def save_selection_review(self, run_id: str, selection_review: SelectionReviewRecord) -> Path:
-        path = self.home.selection_reviews_dir / f"{run_id}.json"
+        review_scope = selection_review_scope(selection_review)
+        if review_scope is None:
+            raise ValueError("persisted selection review support requires an explicit scope")
+        if str(review_scope.run_id) != str(run_id):
+            raise ValueError("persisted selection review support requires run_id to match the review scope")
+        path = _scoped_run_record_path(self.home.selection_reviews_dir, scope=review_scope)
         with self.mutation_guard():
-            _write_json(path, _selection_review_to_payload(run_id, selection_review))
+            _write_json(path, _selection_review_to_payload(run_id, selection_review, scope=review_scope))
         return path
 
     def save_proposal_record(self, record: ProposalOperatorRecord) -> ProposalOperatorRecord:
@@ -1842,9 +1872,12 @@ class PersistedRuntimeStore:
 
     def load_selection_reviews(self) -> dict[str, SelectionReviewRecord]:
         records: dict[str, SelectionReviewRecord] = {}
+        for path in _iter_scoped_record_paths(self.home.selection_reviews_dir):
+            record_key, selection_review = _selection_review_from_payload(_read_json(path))
+            records[record_key] = selection_review
         for path in sorted(self.home.selection_reviews_dir.glob("*.json")):
-            run_id, selection_review = _selection_review_from_payload(_read_json(path))
-            records[run_id] = selection_review
+            record_key, selection_review = _selection_review_from_payload(_read_json(path))
+            records.setdefault(record_key, selection_review)
         return records
 
     def research_artifact_legacy_dirs(self, *extra_dirs: Path | None) -> tuple[Path, ...]:

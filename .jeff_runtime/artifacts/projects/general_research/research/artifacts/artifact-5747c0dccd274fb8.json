@@ -1,0 +1,47 @@
+{
+  "artifact_family": "research_brief",
+  "artifact_id": "artifact-5747c0dccd274fb8",
+  "claim_evidence_links": [],
+  "comparison_criteria": [],
+  "comparison_targets": [],
+  "derived_from_artifact_ids": [
+    "research-0c65af086c979512"
+  ],
+  "effective_date": null,
+  "effective_period": null,
+  "event_date": null,
+  "event_framing": null,
+  "evidence_items": [],
+  "evidence_refs": [],
+  "findings": [
+    "Jeff is described as a CLI-first persisted-runtime v1 backbone.",
+    "The system is strongest in the areas of research support, anti-drift coverage, truthful inspection, bounded `/run`, and approval-gated continuation.",
+    "Jeff is explicitly not a broad API surface, a GUI, a broad memory product, or an autonomous continuation system."
+  ],
+  "freshness_posture": null,
+  "generated_at": "2026-04-21T18:41:45.891151+00:00",
+  "inference": [
+    "JEFF aims to provide a controlled, persisted environment for runtime validation and inspection rather than serving as a general-purpose autonomous agent or user interface."
+  ],
+  "next_history_record_id": null,
+  "observed_date": null,
+  "previous_history_record_id": null,
+  "project_id": "general_research",
+  "question_or_objective": "what is the goal of JEFF",
+  "run_id": "run-1",
+  "schema_version": "1.0",
+  "source_groupings": [],
+  "source_ordering": [],
+  "source_refs": [
+    "document-81eea87a35d7"
+  ],
+  "source_selection_scope": null,
+  "staleness_sensitivity": "medium",
+  "summary": "JEFF is a CLI-first persisted-runtime v1 backbone designed for research support, truthful inspection, anti-drift coverage, approval-gated continuation, and bounded /run operations.",
+  "support_only": true,
+  "title": "what is the goal of JEFF",
+  "uncertainty": [
+    "No explicit uncertainties identified from the provided evidence."
+  ],
+  "work_unit_id": "research-docs-what-is-the-goal-of-jeff-3547d46a"
+}

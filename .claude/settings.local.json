@@ -32,7 +32,26 @@
       "Bash(/tmp/rustup-init.exe -y --default-toolchain stable --profile minimal --no-modify-path)",
       "Bash(export PATH=\"$HOME/.cargo/bin:$PATH\")",
       "Bash(npx --yes @tauri-apps/cli@2 init --ci --app-name \"Jeff\" --window-title \"Jeff\" --frontend-dist \"../dist\" --dev-url \"http://127.0.0.1:5173\" --before-dev-command \"npm run dev\" --before-build-command \"npm run build\")",
-      "Bash(npx tauri *)"
+      "Bash(npx tauri *)",
+      "Bash(MSYS_NO_PATHCONV=1 python -m jeff --command \"/help\")",
+      "Bash(MSYS_NO_PATHCONV=1 python -m jeff --command \"/project list\")",
+      "Bash(MSYS_NO_PATHCONV=1 python -m jeff --project project-1 --command \"/work list\")",
+      "Bash(MSYS_NO_PATHCONV=1 python -m jeff --project project-1 --work wu-1 --command \"/run list\")",
+      "Bash(MSYS_NO_PATHCONV=1 python -m jeff --project project-1 --work wu-1 --run run-10 --command \"/show\")",
+      "Bash(MSYS_NO_PATHCONV=1 python -m jeff --project project-1 --work wu-1 --run run-10 --command \"/trace\")",
+      "Bash(MSYS_NO_PATHCONV=1 python -m jeff --project project-1 --work wu-1 --run run-10 --command \"/lifecycle\")",
+      "Bash(MSYS_NO_PATHCONV=1 python -m jeff --project project-1 --work wu-1 --run run-10 --command \"/selection show\")",
+      "Bash(MSYS_NO_PATHCONV=1 python -m jeff --project project-1 --work wu-1 --command \"/inspect\")",
+      "Bash(MSYS_NO_PATHCONV=1 python -m jeff --project project-1 --work wu-1 --run run-13 --command \"/show\")",
+      "Bash(MSYS_NO_PATHCONV=1 python -m jeff --project project-1 --work wu-1 --run run-1 --command \"/show\")",
+      "Bash(MSYS_NO_PATHCONV=1 python -m jeff --project project-1 --work wu-1 --run run-14 --command \"/show\")",
+      "Bash(MSYS_NO_PATHCONV=1 python -m jeff --command \"/scope show\")",
+      "Bash(MSYS_NO_PATHCONV=1 python -m jeff --command \"/fake command\")",
+      "Bash(MSYS_NO_PATHCONV=1 python -m jeff --command \"/trace\")",
+      "Bash(MSYS_NO_PATHCONV=1 python -m jeff --project project-1 --work wu-1 --run nonexistent --command \"/show\")",
+      "Bash(MSYS_NO_PATHCONV=1 timeout 30 python -m jeff --project project-1 --work wu-1 --command '/research docs \"what is the architecture?\" v1_doc/ARCHITECTURE.md')",
+      "Bash(MSYS_NO_PATHCONV=1 timeout 5 python -m jeff --project project-1 --work wu-1 --command \"/run list\" --json)",
+      "Bash(MSYS_NO_PATHCONV=1 timeout 60 python -m jeff --project project-1 --work wu-1 --command \"/research docs \\\\\"summary\\\\\" README.md\")"
     ]
   }
 }

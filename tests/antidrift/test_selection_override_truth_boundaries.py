@@ -25,6 +25,7 @@ from jeff.core.schemas import Scope
 from jeff.governance import CurrentTruthSnapshot, Policy
 from jeff.interface import JeffCLI
 from jeff.interface.commands import InterfaceContext
+from jeff.runtime_support_identity import scoped_support_key_for_scope
 
 from tests.fixtures.cli import build_state_with_run
 
@@ -32,12 +33,13 @@ from tests.fixtures.cli import build_state_with_run
 def test_override_entry_preserves_original_selection_truth_and_json_blocks() -> None:
     selection_result = _selection_result()
     cli = JeffCLI(context=_context_with_review_chain(selection_result=selection_result))
+    run_key = scoped_support_key_for_scope(Scope(project_id="project-1", work_unit_id="wu-1", run_id="run-1"))
 
     result = cli.execute(
         '/selection override proposal-2 --why "Operator prefers the second bounded option." run-1',
         json_output=True,
     )
-    updated_review = result.context.selection_reviews["run-1"]
+    updated_review = result.context.selection_reviews[run_key]
     payload = json.loads(cli.run_one_shot("/selection show run-1", json_output=True))
 
     assert updated_review.selection_result == selection_result
@@ -53,15 +55,16 @@ def test_override_entry_preserves_original_selection_truth_and_json_blocks() -> 
 def test_invalid_override_fails_closed_without_mutating_existing_review_chain() -> None:
     context = _context_with_review_chain(selection_result=_selection_result())
     cli = JeffCLI(context=context)
+    run_key = scoped_support_key_for_scope(Scope(project_id="project-1", work_unit_id="wu-1", run_id="run-1"))
 
     before_payload = json.loads(cli.run_one_shot("/selection show run-1", json_output=True))
-    before_review = context.selection_reviews["run-1"]
+    before_review = context.selection_reviews[run_key]
 
     with pytest.raises(ValueError, match="chosen_proposal_id"):
         cli.run_one_shot('/selection override proposal-999 --why "This proposal is out of set." run-1')
 
     after_payload = json.loads(cli.run_one_shot("/selection show run-1", json_output=True))
-    after_review = cli.execute("/selection show run-1").context.selection_reviews["run-1"]
+    after_review = cli.execute("/selection show run-1").context.selection_reviews[run_key]
 
     assert after_review == before_review
     assert after_payload == before_payload
@@ -72,7 +75,8 @@ def test_invalid_override_fails_closed_without_mutating_existing_review_chain() 
 def test_override_recomputes_governance_for_new_action_basis_without_reusing_old_result() -> None:
     selection_result = _selection_result()
     context = _context_with_review_chain(selection_result=selection_result)
-    original_review = context.selection_reviews["run-1"]
+    run_key = scoped_support_key_for_scope(Scope(project_id="project-1", work_unit_id="wu-1", run_id="run-1"))
+    original_review = context.selection_reviews[run_key]
     original_action_id = original_review.formed_action_result.action.action_id
     original_governance_action_id = original_review.governance_handoff_result.action.action_id
 
@@ -80,7 +84,7 @@ def test_override_recomputes_governance_for_new_action_basis_without_reusing_old
     result = cli.execute(
         '/selection override proposal-2 --why "Operator wants the alternate bounded path." run-1'
     )
-    updated_review = result.context.selection_reviews["run-1"]
+    updated_review = result.context.selection_reviews[run_key]
 
     assert updated_review.operator_override is not None
     assert updated_review.operator_override.chosen_proposal_id == "proposal-2"
@@ -204,7 +208,7 @@ def _context_with_review_chain(*, selection_result: SelectionResult) -> Interfac
     return InterfaceContext(
         state=state,
         selection_reviews={
-            str(scope.run_id): SelectionReviewRecord(
+            scoped_support_key_for_scope(scope): SelectionReviewRecord(
                 selection_result=selection_result,
                 operator_override=None,
                 resolved_basis=resolved_basis,

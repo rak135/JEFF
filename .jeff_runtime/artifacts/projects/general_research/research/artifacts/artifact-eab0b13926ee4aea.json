@@ -1,0 +1,185 @@
+{
+  "artifact_family": "evidence_bundle",
+  "artifact_id": "artifact-eab0b13926ee4aea",
+  "claim_evidence_links": [
+    {
+      "claim_text": "Jeff uses nine top-level layers.",
+      "evidence_ids": [
+        "research-16f28c32957ddd1c:evidence:1",
+        "research-16f28c32957ddd1c:evidence:2",
+        "research-16f28c32957ddd1c:evidence:3",
+        "research-16f28c32957ddd1c:evidence:4",
+        "research-16f28c32957ddd1c:evidence:5",
+        "research-16f28c32957ddd1c:evidence:6"
+      ]
+    },
+    {
+      "claim_text": "The semantic owner layers include Core, Governance, Cognitive, Action, and Memory.",
+      "evidence_ids": [
+        "research-16f28c32957ddd1c:evidence:1",
+        "research-16f28c32957ddd1c:evidence:2",
+        "research-16f28c32957ddd1c:evidence:3",
+        "research-16f28c32957ddd1c:evidence:4",
+        "research-16f28c32957ddd1c:evidence:5",
+        "research-16f28c32957ddd1c:evidence:6"
+      ]
+    },
+    {
+      "claim_text": "Orchestration coordinates semantic layers using public contracts.",
+      "evidence_ids": [
+        "research-16f28c32957ddd1c:evidence:1",
+        "research-16f28c32957ddd1c:evidence:2",
+        "research-16f28c32957ddd1c:evidence:3",
+        "research-16f28c32957ddd1c:evidence:4",
+        "research-16f28c32957ddd1c:evidence:5",
+        "research-16f28c32957ddd1c:evidence:6"
+      ]
+    },
+    {
+      "claim_text": "Interface presents and invokes the system via truthful surfaces.",
+      "evidence_ids": [
+        "research-16f28c32957ddd1c:evidence:1",
+        "research-16f28c32957ddd1c:evidence:2",
+        "research-16f28c32957ddd1c:evidence:3",
+        "research-16f28c32957ddd1c:evidence:4",
+        "research-16f28c32957ddd1c:evidence:5",
+        "research-16f28c32957ddd1c:evidence:6"
+      ]
+    },
+    {
+      "claim_text": "Infrastructure provides technical support and does not define Jeff semantics.",
+      "evidence_ids": [
+        "research-16f28c32957ddd1c:evidence:1",
+        "research-16f28c32957ddd1c:evidence:2",
+        "research-16f28c32957ddd1c:evidence:3",
+        "research-16f28c32957ddd1c:evidence:4",
+        "research-16f28c32957ddd1c:evidence:5",
+        "research-16f28c32957ddd1c:evidence:6"
+      ]
+    },
+    {
+      "claim_text": "Assistant is a future higher-level interaction behavior positioned above the other layers.",
+      "evidence_ids": [
+        "research-16f28c32957ddd1c:evidence:1",
+        "research-16f28c32957ddd1c:evidence:2",
+        "research-16f28c32957ddd1c:evidence:3",
+        "research-16f28c32957ddd1c:evidence:4",
+        "research-16f28c32957ddd1c:evidence:5",
+        "research-16f28c32957ddd1c:evidence:6"
+      ]
+    }
+  ],
+  "comparison_criteria": [],
+  "comparison_targets": [],
+  "derived_from_artifact_ids": [
+    "research-16f28c32957ddd1c"
+  ],
+  "effective_date": null,
+  "effective_period": null,
+  "event_date": null,
+  "event_framing": null,
+  "evidence_items": [
+    {
+      "caution": null,
+      "claim": "Jeff uses nine top-level layers.",
+      "evidence_id": "research-16f28c32957ddd1c:evidence:1",
+      "evidence_text": "- One authority per concern. - No rival truth layers. - No rival mutation primitives. - Truth-first reads before memory or artifacts. - No hidden control flow. - No implicit mutation. - No prompt-only governance. - No interface-owned truth. - No orchestration-owned business logic. - No adapter-owned semantics. - No decorative modularity. - No plan-, workflow-, or selection-implied permission. - Fa",
+      "extraction_quality": null,
+      "source_refs": [
+        "document-a95cd44ea104"
+      ]
+    },
+    {
+      "caution": null,
+      "claim": "Jeff uses nine top-level layers.",
+      "evidence_id": "research-16f28c32957ddd1c:evidence:2",
+      "evidence_text": "Jeff uses nine top-level layers:",
+      "extraction_quality": null,
+      "source_refs": [
+        "document-a95cd44ea104"
+      ]
+    },
+    {
+      "caution": null,
+      "claim": "Jeff uses nine top-level layers.",
+      "evidence_id": "research-16f28c32957ddd1c:evidence:3",
+      "evidence_text": "Interpretation rules: - Core, Governance, Cognitive, Action, and Memory are the semantic owner layers. - Orchestration coordinates semantic layers through public contracts. - Interface presents and invokes the system through truthful surfaces. - Infrastructure provides technical support and never defines Jeff semantics. - Assistant is future higher-level interaction behavior above the rest of the",
+      "extraction_quality": null,
+      "source_refs": [
+        "document-a95cd44ea104"
+      ]
+    },
+    {
+      "caution": null,
+      "claim": "Jeff uses nine top-level layers.",
+      "evidence_id": "research-16f28c32957ddd1c:evidence:4",
+      "evidence_text": "Interaction with neighboring layers: - exposes read-only canonical truth surfaces to Governance, Cognitive, Memory, Orchestration, and approved Interface projections - accepts canonical mutation only through transition logic - consumes no downstream layer as a semantic dependency",
+      "extraction_quality": null,
+      "source_refs": [
+        "document-a95cd44ea104"
+      ]
+    },
+    {
+      "caution": null,
+      "claim": "Jeff uses nine top-level layers.",
+      "evidence_id": "research-16f28c32957ddd1c:evidence:5",
+      "evidence_text": "Interaction with neighboring layers: - reads current truth from Core - consumes bounded action objects formed from selected or plan-refined intent - passes governed action objects and action-entry decisions to Action through Orchestration and public contracts",
+      "extraction_quality": null,
+      "source_refs": [
+        "document-a95cd44ea104"
+      ]
+    },
+    {
+      "caution": null,
+      "claim": "Jeff uses nine top-level layers.",
+      "evidence_id": "research-16f28c32957ddd1c:evidence:6",
+      "evidence_text": "Interaction with neighboring layers: - reads truth from Core first - may consume Governance constraints as inputs, but does not own final permission - hands bounded selected or plan-refined operational intent downstream as action - does not let selection or planning imply permission by themselves - consumes outcome from Action for evaluation - may recommend transition-relevant updates, but does no",
+      "extraction_quality": null,
+      "source_refs": [
+        "document-a95cd44ea104"
+      ]
+    }
+  ],
+  "evidence_refs": [
+    "research-16f28c32957ddd1c:evidence:1",
+    "research-16f28c32957ddd1c:evidence:2",
+    "research-16f28c32957ddd1c:evidence:3",
+    "research-16f28c32957ddd1c:evidence:4",
+    "research-16f28c32957ddd1c:evidence:5",
+    "research-16f28c32957ddd1c:evidence:6"
+  ],
+  "findings": [
+    "Jeff uses nine top-level layers.",
+    "The semantic owner layers include Core, Governance, Cognitive, Action, and Memory.",
+    "Orchestration coordinates semantic layers using public contracts.",
+    "Interface presents and invokes the system via truthful surfaces.",
+    "Infrastructure provides technical support and does not define Jeff semantics.",
+    "Assistant is a future higher-level interaction behavior positioned above the other layers."
+  ],
+  "freshness_posture": null,
+  "generated_at": "2026-04-21T18:44:09.773960+00:00",
+  "inference": [
+    "The architecture is designed to separate semantic ownership from coordination and technical infrastructure."
+  ],
+  "next_history_record_id": null,
+  "observed_date": null,
+  "previous_history_record_id": null,
+  "project_id": "general_research",
+  "question_or_objective": "list the layers",
+  "run_id": "run-1",
+  "schema_version": "1.0",
+  "source_groupings": [],
+  "source_ordering": [],
+  "source_refs": [
+    "document-a95cd44ea104"
+  ],
+  "source_selection_scope": null,
+  "staleness_sensitivity": "medium",
+  "summary": "Evidence extracted for this bounded research output remains inspectable with provenance preserved.",
+  "support_only": true,
+  "title": "Evidence bundle: list the layers",
+  "uncertainty": [
+    "The provided evidence lists eight specific layers (Core, Governance, Cognitive, Action, Memory, Orchestration, Interface, Infrastructure, and Assistant) but does not explicitly name a ninth distinct layer despite stating there are nine top-level layers."
+  ],
+  "work_unit_id": "research-docs-list-the-layers-060b7e5a"
+}

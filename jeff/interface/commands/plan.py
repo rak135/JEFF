@@ -69,7 +69,7 @@ def plan_show_command(*, tokens: list[str], session: CliSession, context: Interf
     )
     project = require_project_for_run(context, run.project_id)
     work_unit = project.work_units[run.work_unit_id]
-    flow_run = require_flow_run(context, str(run.run_id))
+    flow_run = require_flow_run(context, run)
     plan = _require_plan(flow_run, str(run.run_id))
     payload = plan_show_json(project=project, work_unit=work_unit, run=run, flow_run=flow_run, plan=plan)
     text = render_plan_show(payload)
@@ -89,7 +89,7 @@ def plan_steps_command(*, tokens: list[str], session: CliSession, context: Inter
     )
     project = require_project_for_run(context, run.project_id)
     work_unit = project.work_units[run.work_unit_id]
-    plan = _require_plan(require_flow_run(context, str(run.run_id)), str(run.run_id))
+    plan = _require_plan(require_flow_run(context, run), str(run.run_id))
     payload = plan_steps_json(project=project, work_unit=work_unit, run=run, plan=plan)
     text = render_plan_steps(payload)
     if notice is not None:
@@ -109,7 +109,7 @@ def plan_execute_command(*, tokens: list[str], session: CliSession, context: Int
     project = require_project_for_run(context, run.project_id)
     work_unit = project.work_units[run.work_unit_id]
     run_id = str(run.run_id)
-    flow_run = require_flow_run(context, run_id)
+    flow_run = require_flow_run(context, run)
     plan = _require_plan(flow_run, run_id)
     run_scope = Scope(project_id=str(run.project_id), work_unit_id=str(run.work_unit_id), run_id=run_id)
 
@@ -225,7 +225,7 @@ def plan_execute_command(*, tokens: list[str], session: CliSession, context: Int
         attempt_summary=execution_reason,
     )
     next_context = replace_flow_run(context=context, run_id=run_id, flow_run=next_flow_run)
-    flow_run = next_context.flow_runs[run_id]
+    flow_run = require_flow_run(next_context, run)
     next_context, run = sync_run_truth_from_flow(context=next_context, run=run, flow_run=flow_run)
     project = require_project_for_run(next_context, run.project_id)
     work_unit = project.work_units[run.work_unit_id]
@@ -269,7 +269,7 @@ def plan_checkpoint_command(*, tokens: list[str], session: CliSession, context: 
     project = require_project_for_run(context, run.project_id)
     work_unit = project.work_units[run.work_unit_id]
     run_id = str(run.run_id)
-    flow_run = require_flow_run(context, run_id)
+    flow_run = require_flow_run(context, run)
     plan = _require_plan(flow_run, run_id)
 
     next_context = context
@@ -309,7 +309,7 @@ def plan_checkpoint_command(*, tokens: list[str], session: CliSession, context: 
             memory_handoff_note=flow_run.memory_handoff_note,
         )
         next_context = replace_flow_run(context=context, run_id=run_id, flow_run=next_flow_run)
-        flow_run = next_context.flow_runs[run_id]
+        flow_run = require_flow_run(next_context, run)
         next_context, run = sync_run_truth_from_flow(context=next_context, run=run, flow_run=flow_run)
         project = require_project_for_run(next_context, run.project_id)
         work_unit = project.work_units[run.work_unit_id]

@@ -636,6 +636,8 @@ def render_proposal_record(payload: dict[str, Any]) -> str:
             f"evidence_items={evidence_support['evidence_count']} "
             f"memory_items={memory_support['summary_count']}"
         )
+        if memory_support["empty_reason"] is not None:
+            lines.append(f"[proposal_input_bundle] memory_empty_reason={memory_support['empty_reason']}")
         if request_frame["visible_constraints"]:
             lines.append(
                 "[proposal_input_bundle] visible_constraints="

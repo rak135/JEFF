@@ -8,6 +8,7 @@ from jeff.core.state import bootstrap_global_state
 from jeff.core.transition import TransitionRequest, TransitionResult, apply_transition
 from jeff.governance import Approval, CurrentTruthSnapshot, Policy, evaluate_action_entry
 from jeff.interface.commands.support.flow_runs import sync_run_truth_from_flow
+from jeff.runtime_support_identity import scoped_support_key_for_scope
 from jeff.interface.commands import InterfaceContext
 from jeff.orchestrator.lifecycle import FlowLifecycle
 from jeff.orchestrator.routing import RoutingDecision
@@ -257,7 +258,7 @@ def build_interface_context(*, flow_run: FlowRunResult | None = None) -> tuple[I
     state, scope = build_state_with_run()
     context = InterfaceContext(
         state=state,
-        flow_runs={} if flow_run is None else {str(scope.run_id): flow_run},
+        flow_runs={} if flow_run is None else {scoped_support_key_for_scope(scope): flow_run},
     )
     return context, scope
 
@@ -267,7 +268,7 @@ def build_interface_context_with_flow(**flow_kwargs: object) -> tuple[InterfaceC
     flow_run = build_flow_run(scope, **flow_kwargs)
     context = InterfaceContext(
         state=state,
-        flow_runs={str(scope.run_id): flow_run},
+        flow_runs={scoped_support_key_for_scope(scope): flow_run},
     )
     context, _ = sync_run_truth_from_flow(
         context=context,

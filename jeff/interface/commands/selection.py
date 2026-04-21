@@ -14,6 +14,7 @@ from ..json_views import selection_override_receipt_json, selection_review_json
 from ..render import render_selection_override_receipt, render_selection_review
 from ..session import CliSession
 from .models import CommandResult, InterfaceContext
+from .support.flow_runs import find_flow_run_for_run
 from .support.scope_resolution import require_project_for_run, resolve_historical_run
 from .support.selection_review_runtime import (
     ensure_selection_review_for_run,
@@ -51,7 +52,7 @@ def selection_show_command(*, tokens: list[str], session: CliSession, context: I
     )
     project = require_project_for_run(context, run.project_id)
     work_unit = project.work_units[run.work_unit_id]
-    flow_run = context.flow_runs.get(str(run.run_id))
+    flow_run = find_flow_run_for_run(context, run)
     next_context, selection_review = materialize_selection_review_for_run(
         context=context,
         run=run,
@@ -80,7 +81,7 @@ def selection_override_command(*, tokens: list[str], session: CliSession, contex
         command_name="selection override",
     )
     run_id = str(run.run_id)
-    flow_run = context.flow_runs.get(run_id)
+    flow_run = find_flow_run_for_run(context, run)
     next_context, existing_review = ensure_selection_review_for_run(context=context, run=run, flow_run=flow_run)
     if existing_review is None:
         raise ValueError(f"no selection review data is available for run {run_id}")

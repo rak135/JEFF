@@ -35,6 +35,7 @@ def test_direct_proposal_success_and_restart_inspection(tmp_path: Path) -> None:
     assert created["proposal_input_bundle"]["current_execution_support"]["item_count"] == 0
     assert created["proposal_input_bundle"]["evidence_support"]["evidence_count"] == 0
     assert created["proposal_input_bundle"]["memory_support"]["summary_count"] == 0
+    assert created["proposal_input_bundle"]["memory_support"]["empty_reason"] == "no scope-matched memory records matched the current query"
     assert shown["truth"]["proposal_id"] == created["truth"]["proposal_id"]
     assert raw["attempts"][0]["attempt_kind"] == "initial"
     assert "PROPOSAL_COUNT: 1" in raw["attempts"][0]["raw_output_text"]
@@ -250,6 +251,25 @@ def test_run_memory_handoff_survives_restart_and_direct_proposal_reads_it(
         "work_unit",
         "run",
     ]
+
+
+def test_proposal_show_honors_exact_work_unit_scope_when_run_ids_collide(tmp_path: Path) -> None:
+    _create_second_work_unit_with_same_run_id(tmp_path)
+
+    primary_cli = _scoped_cli(tmp_path, _runtime_context(tmp_path, _valid_proposal_text()))
+    primary_cli.run_one_shot("/run use run-1")
+    primary_created = json.loads(primary_cli.run_one_shot('/proposal "Primary scoped proposal"', json_output=True))
+
+    secondary_cli = _scoped_cli(tmp_path, _runtime_context(tmp_path, _valid_proposal_text()))
+    secondary_cli.run_one_shot("/work use wu-2")
+    secondary_cli.run_one_shot("/run use run-1")
+    secondary_created = json.loads(secondary_cli.run_one_shot('/proposal "Secondary scoped proposal"', json_output=True))
+
+    shown = json.loads(secondary_cli.run_one_shot("/proposal show run-1", json_output=True))
+
+    assert shown["truth"]["proposal_id"] == secondary_created["truth"]["proposal_id"]
+    assert shown["truth"]["proposal_id"] != primary_created["truth"]["proposal_id"]
+    assert shown["truth"]["scope"]["work_unit_id"] == "wu-2"
 
 
 def _runtime_context(tmp_path: Path, proposal_text: str) -> InterfaceContext:

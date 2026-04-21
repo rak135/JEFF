@@ -161,6 +161,7 @@ class ProposalMemorySupport:
     memory_lessons: tuple[ProposalSupportItem, ...] = ()
     memory_risk_reminders: tuple[ProposalSupportItem, ...] = ()
     memory_precedents: tuple[ProposalSupportItem, ...] = ()
+    empty_reason: str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "memory_ids", normalize_text_list(self.memory_ids, field_name="memory_ids"))
@@ -168,6 +169,8 @@ class ProposalMemorySupport:
         object.__setattr__(self, "memory_lessons", tuple(self.memory_lessons))
         object.__setattr__(self, "memory_risk_reminders", tuple(self.memory_risk_reminders))
         object.__setattr__(self, "memory_precedents", tuple(self.memory_precedents))
+        if self.empty_reason is not None:
+            object.__setattr__(self, "empty_reason", require_text(self.empty_reason, field_name="empty_reason"))
 
 
 @dataclass(frozen=True, slots=True)
@@ -511,6 +514,7 @@ def _build_memory_support(
     seen_lesson: set[tuple[str, str]] = set()
     seen_risk: set[tuple[str, str]] = set()
     seen_precedent: set[tuple[str, str]] = set()
+    empty_reason: str | None = None
 
     if committed_memory_records:
         for index, record in enumerate(committed_memory_records[:_MEMORY_SUMMARY_LIMIT], start=1):
@@ -579,12 +583,16 @@ def _build_memory_support(
                 ),
             )
 
+    if not summary_items:
+        empty_reason = context_package.memory_support_empty_reason
+
     return ProposalMemorySupport(
         memory_ids=tuple(memory_ids[:_MEMORY_SUMMARY_LIMIT]),
         memory_summaries=tuple(summary_items[:_MEMORY_SUMMARY_LIMIT]),
         memory_lessons=tuple(lesson_items[:_MEMORY_DETAIL_LIMIT]),
         memory_risk_reminders=tuple(risk_items[:_MEMORY_DETAIL_LIMIT]),
         memory_precedents=tuple(precedent_items[:_MEMORY_DETAIL_LIMIT]),
+        empty_reason=empty_reason,
     )
 
 

@@ -152,6 +152,23 @@ def test_research_json_payload_keeps_support_distinct_from_truth(tmp_path: Path)
     assert payload["derived"]["memory_handoff_result"] is None
 
 
+def test_research_falls_back_to_minimal_receipt_when_text_render_is_empty(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    question = "What does the bounded plan support?"
+    cli, document = _build_docs_cli(tmp_path, question=question)
+
+    cli.run_one_shot("/project use project-1")
+    cli.run_one_shot("/work use wu-1")
+    monkeypatch.setattr("jeff.interface.commands.research.render_research_result", lambda payload: "")
+
+    output = cli.run_one_shot(f'/research docs "{question}" "{document}"')
+
+    assert "RESEARCH docs project_id=project-1 work_unit_id=wu-1 run_id=run-1" in output
+    assert "receipt=research completed; detailed render was empty so a minimal receipt is shown" in output
+
+
 def test_docs_command_with_missing_path_reports_specific_missing_path(tmp_path: Path) -> None:
     question = "What does the bounded plan support?"
     cli, _ = _build_docs_cli(tmp_path, question=question)

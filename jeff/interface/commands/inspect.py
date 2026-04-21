@@ -12,7 +12,7 @@ from ..json_views import lifecycle_json, run_show_json, trace_json
 from ..render import render_lifecycle, render_run_show, render_trace
 from ..session import CliSession
 from .models import CommandResult, InterfaceContext
-from .support.flow_runs import require_flow_run
+from .support.flow_runs import find_flow_run_for_run, require_flow_run
 from .support.scope_resolution import (
     require_project_for_run,
     require_scoped_project,
@@ -40,7 +40,7 @@ def inspect_command(
         project=project,
         work_unit=work_unit,
     )
-    flow_run = next_context.flow_runs.get(str(run.run_id))
+    flow_run = find_flow_run_for_run(next_context, run)
     next_context, selection_review = materialize_selection_review_for_run(
         context=next_context,
         run=run,
@@ -76,7 +76,7 @@ def show_command(*, tokens: list[str], session: CliSession, context: InterfaceCo
     )
     project = require_project_for_run(context, run.project_id)
     work_unit = project.work_units[run.work_unit_id]
-    flow_run = context.flow_runs.get(str(run.run_id))
+    flow_run = find_flow_run_for_run(context, run)
     next_context, selection_review = materialize_selection_review_for_run(
         context=context,
         run=run,
@@ -102,7 +102,7 @@ def trace_command(*, tokens: list[str], session: CliSession, context: InterfaceC
         context=context,
         command_name=tokens[0],
     )
-    flow_run = require_flow_run(context, str(run.run_id))
+    flow_run = require_flow_run(context, run)
     payload = trace_json(flow_run)
     text = render_trace(payload)
     if notice is not None:
@@ -117,7 +117,7 @@ def lifecycle_command(*, tokens: list[str], session: CliSession, context: Interf
         context=context,
         command_name=tokens[0],
     )
-    flow_run = require_flow_run(context, str(run.run_id))
+    flow_run = require_flow_run(context, run)
     payload = lifecycle_json(flow_run)
     text = render_lifecycle(payload)
     if notice is not None:

@@ -57,7 +57,7 @@ def request_command(*, tokens: list[str], session: CliSession, context: Interfac
     request_type = tokens[0]
     target_run = resolve_run_from_tokens(tokens=tokens, session=session, context=context, command_name=tokens[0])
     run_id = str(target_run.run_id)
-    flow_run = require_flow_run(context, run_id)
+    flow_run = require_flow_run(context, target_run)
     routed_outcome = None if flow_run.routing_decision is None else flow_run.routing_decision.routed_outcome
 
     allowed_outcomes = set(_REQUEST_ENTRY_RULES[request_type]["required_outcomes"])

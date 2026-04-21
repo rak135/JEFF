@@ -1,0 +1,29 @@
+{
+  "record_class": "transition_audit_support",
+  "recorded_at": "2026-04-21T18:40:32+00:00",
+  "request": {
+    "basis_state_version": 39,
+    "payload": {
+      "objective": "Ad-hoc docs research: what is the goal of JEFF",
+      "work_unit_id": "research-docs-what-is-the-goal-of-jeff-3547d46a"
+    },
+    "scope": {
+      "project_id": "general_research",
+      "run_id": null,
+      "work_unit_id": null
+    },
+    "transition_id": "transition-auto-create-work-unit-general_research-research-docs-what-is-the-goal-of-jeff-3547d46a",
+    "transition_type": "create_work_unit"
+  },
+  "result": {
+    "changed_paths": [
+      "projects.general_research.work_units.research-docs-what-is-the-goal-of-jeff-3547d46a"
+    ],
+    "state_after_version": 40,
+    "state_before_version": 39,
+    "transition_id": "transition-auto-create-work-unit-general_research-research-docs-what-is-the-goal-of-jeff-3547d46a",
+    "transition_result": "committed",
+    "validation_errors": []
+  },
+  "schema_version": "1.0"
+}

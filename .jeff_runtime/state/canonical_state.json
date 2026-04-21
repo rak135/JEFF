@@ -1,6 +1,6 @@
 {
   "record_class": "canonical_state_snapshot",
-  "recorded_at": "2026-04-20T19:49:56+00:00",
+  "recorded_at": "2026-04-21T18:44:00+00:00",
   "schema_version": "1.0",
   "state": {
     "projects": {
@@ -9,6 +9,23 @@
         "project_id": "general_research",
         "project_lifecycle_state": "active",
         "work_units": {
+          "research-docs-list-the-layers-060b7e5a": {
+            "objective": "Ad-hoc docs research: list the layers",
+            "project_id": "general_research",
+            "runs": {
+              "run-1": {
+                "last_evaluation_verdict": null,
+                "last_execution_status": null,
+                "last_outcome_state": null,
+                "project_id": "general_research",
+                "run_id": "run-1",
+                "run_lifecycle_state": "created",
+                "work_unit_id": "research-docs-list-the-layers-060b7e5a"
+              }
+            },
+            "work_unit_id": "research-docs-list-the-layers-060b7e5a",
+            "work_unit_lifecycle_state": "open"
+          },
           "research-docs-startup-summary-43bf0309": {
             "objective": "Ad-hoc docs research: startup summary",
             "project_id": "general_research",
@@ -58,6 +75,23 @@
               }
             },
             "work_unit_id": "research-docs-summary-d1f80a8e",
+            "work_unit_lifecycle_state": "open"
+          },
+          "research-docs-what-is-the-goal-of-jeff-3547d46a": {
+            "objective": "Ad-hoc docs research: what is the goal of JEFF",
+            "project_id": "general_research",
+            "runs": {
+              "run-1": {
+                "last_evaluation_verdict": null,
+                "last_execution_status": null,
+                "last_outcome_state": null,
+                "project_id": "general_research",
+                "run_id": "run-1",
+                "run_lifecycle_state": "created",
+                "work_unit_id": "research-docs-what-is-the-goal-of-jeff-3547d46a"
+              }
+            },
+            "work_unit_id": "research-docs-what-is-the-goal-of-jeff-3547d46a",
             "work_unit_lifecycle_state": "open"
           }
         }
@@ -123,6 +157,15 @@
                 "project_id": "project-1",
                 "run_id": "run-14",
                 "run_lifecycle_state": "deferred",
+                "work_unit_id": "wu-1"
+              },
+              "run-15": {
+                "last_evaluation_verdict": "acceptable",
+                "last_execution_status": "completed",
+                "last_outcome_state": "complete",
+                "project_id": "project-1",
+                "run_id": "run-15",
+                "run_lifecycle_state": "completed",
                 "work_unit_id": "wu-1"
               },
               "run-2": {
@@ -205,8 +248,8 @@
       }
     },
     "state_meta": {
-      "last_transition_id": "transition-sync-run-project-1-wu-1-run-14-37",
-      "state_version": 37
+      "last_transition_id": "transition-auto-create-run-general_research-research-docs-list-the-layers-060b7e5a-run-1",
+      "state_version": 43
     },
     "system": {
       "system_lifecycle_state": "ready"

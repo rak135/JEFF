@@ -1,9 +1,11 @@
 import pytest
+from jeff.core.schemas import Scope
 
 import jeff.interface.commands as commands_module
 from jeff.interface.commands.support.flow_runs import _canonical_run_lifecycle_state
 
 from jeff.interface import InterfaceContext, JeffCLI
+from jeff.runtime_support_identity import scoped_support_key_for_scope
 
 from tests.fixtures.cli import build_flow_run, build_state_with_runs
 
@@ -12,6 +14,7 @@ def test_inspect_auto_binds_existing_run_in_selected_work_unit() -> None:
     state, scope = build_state_with_runs()
     flow_run = build_flow_run(scope)
     cli = JeffCLI(context=InterfaceContext(state=state, flow_runs={str(scope.run_id): flow_run}))
+    run_key = scoped_support_key_for_scope(Scope(project_id="project-1", work_unit_id="wu-1", run_id="run-1"))
 
     cli.run_one_shot("/project use project-1")
     cli.run_one_shot("/work use wu-1")
@@ -24,7 +27,7 @@ def test_inspect_auto_binds_existing_run_in_selected_work_unit() -> None:
     assert "[support][live_context] truth_families=project,work_unit,run" in text
     assert "[support][proposal] serious_option_count=2" in text
     assert cli.session.scope.run_id == "run-1"
-    assert "run-1" in cli.execute("/inspect").context.selection_reviews
+    assert run_key in cli.execute("/inspect").context.selection_reviews
 
 
 def test_inspect_creates_new_run_through_transition_path_when_none_exist() -> None:

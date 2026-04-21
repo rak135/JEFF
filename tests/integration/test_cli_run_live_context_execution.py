@@ -30,6 +30,7 @@ from jeff.infrastructure import (
 )
 from jeff.action.execution import RepoLocalValidationPlan
 from jeff.interface import InterfaceContext, JeffCLI
+from jeff.runtime_support_identity import scoped_support_key_for_scope
 from jeff.knowledge import KnowledgeStore, create_source_digest_from_research_record, create_topic_note, save_knowledge_artifact
 from jeff.memory import InMemoryMemoryStore, MemorySupportRef, create_memory_candidate, write_memory_candidate
 from jeff.cognitive.research.archive import ResearchArchiveStore, create_research_brief, save_archive_artifact
@@ -144,7 +145,9 @@ def test_run_respects_governance_gate_and_does_not_fake_execution(tmp_path: Path
     monkeypatch.setattr(command_scope, "build_run_governance_inputs", _approval_required_inputs)
 
     payload = cli.execute('/run "What bounded rollout should execute now?"', json_output=True).json_payload
-    flow_run = cli.context.flow_runs["run-1"]
+    flow_run = cli.context.flow_runs[
+        scoped_support_key_for_scope(Scope(project_id="project-1", work_unit_id="wu-1", run_id="run-1"))
+    ]
 
     assert payload is not None
     assert payload["derived"]["allowed_now"] is False

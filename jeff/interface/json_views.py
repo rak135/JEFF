@@ -1249,6 +1249,7 @@ def _proposal_input_bundle_summary_json(record: ProposalOperatorRecord) -> dict[
             "lesson_count": len(bundle.memory_support.memory_lessons),
             "risk_count": len(bundle.memory_support.memory_risk_reminders),
             "precedent_count": len(bundle.memory_support.memory_precedents),
+            "empty_reason": bundle.memory_support.empty_reason,
             "memory_summaries": [
                 {
                     "source_label": item.source_label,

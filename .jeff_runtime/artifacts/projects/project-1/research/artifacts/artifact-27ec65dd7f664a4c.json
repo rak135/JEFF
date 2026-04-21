@@ -1,0 +1,48 @@
+{
+  "artifact_family": "research_brief",
+  "artifact_id": "artifact-27ec65dd7f664a4c",
+  "claim_evidence_links": [],
+  "comparison_criteria": [],
+  "comparison_targets": [],
+  "derived_from_artifact_ids": [
+    "research-41f3a31e4e58042b"
+  ],
+  "effective_date": null,
+  "effective_period": null,
+  "event_date": null,
+  "event_framing": null,
+  "evidence_items": [],
+  "evidence_refs": [],
+  "findings": [
+    "Jeff initializes a local runtime workspace under .jeff_runtime, creating project-1 / wu-1 without seeded run history on fresh or reset runtimes, and reloading persisted state and records on subsequent startups.",
+    "The system does not start a GUI, daemon, or background continuation.",
+    "Jeff's primary strengths include truthful inspection, bounded /run, approval-gated continuation, research support, and anti-drift coverage.",
+    "Jeff is not designed as a broad API surface, a broad memo, an autonomous continuation system, or a GUI."
+  ],
+  "freshness_posture": null,
+  "generated_at": "2026-04-20T20:14:17.685713+00:00",
+  "inference": [
+    "Jeff relies on local file system persistence to maintain state between sessions."
+  ],
+  "next_history_record_id": null,
+  "observed_date": null,
+  "previous_history_record_id": null,
+  "project_id": "project-1",
+  "question_or_objective": "startup summary",
+  "run_id": "run-10",
+  "schema_version": "1.0",
+  "source_groupings": [],
+  "source_ordering": [],
+  "source_refs": [
+    "document-81eea87a35d7"
+  ],
+  "source_selection_scope": null,
+  "staleness_sensitivity": "medium",
+  "summary": "Jeff is a CLI-first persisted-runtime v1 backbone that initializes or loads a local runtime workspace located under .jeff_runtime. It focuses on truthful inspection, research support, and anti-drift coverage, rather than serving as a GUI or autonomous system.",
+  "support_only": true,
+  "title": "startup summary",
+  "uncertainty": [
+    "No explicit uncertainties identified from the provided evidence."
+  ],
+  "work_unit_id": "wu-1"
+}

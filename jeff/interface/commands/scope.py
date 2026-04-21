@@ -33,7 +33,7 @@ from ..render import render_project_list, render_run_list, render_run_show, rend
 from ..session import CliSession
 from .models import CommandResult, InterfaceContext
 from .support.context import assemble_live_context_package, build_run_governance_inputs
-from .support.flow_runs import replace_flow_run, sync_run_truth_from_flow
+from .support.flow_runs import replace_flow_run, require_flow_run, sync_run_truth_from_flow
 from .support.scope_resolution import (
     get_project,
     get_run,
@@ -169,7 +169,7 @@ def _run_objective_command(
         flow_run=flow_run,
         objective_summary=objective,
     )
-    flow_run = next_context.flow_runs[str(run.run_id)]
+    flow_run = require_flow_run(next_context, run)
     next_context, run = sync_run_truth_from_flow(context=next_context, run=run, flow_run=flow_run)
     project = get_project(next_context, str(project.project_id))
     work_unit = get_work_unit(project, str(work_unit.work_unit_id))
